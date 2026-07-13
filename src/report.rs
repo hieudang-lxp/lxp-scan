@@ -1,7 +1,31 @@
-use crate::drift::DriftRow;
+use crate::drift::{DriftLevel, DriftRow};
 use crate::impact::ImpactHit;
 use anyhow::Result;
-use comfy_table::Table;
+use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_BORDERS_ONLY};
+use std::io::IsTerminal;
+
+/// Minimal borders; wrap to terminal width only when stdout is a TTY so piped
+/// output stays one-line-per-row (grep-able) and tests stay deterministic.
+fn base_table() -> Table {
+    let mut table = Table::new();
+    table.load_preset(UTF8_BORDERS_ONLY);
+    if std::io::stdout().is_terminal() {
+        table.set_content_arrangement(ContentArrangement::Dynamic);
+    }
+    table
+}
+
+fn level_cell(level: DriftLevel) -> Cell {
+    let cell = Cell::new(format!("{level:?}"));
+    if !std::io::stdout().is_terminal() {
+        return cell;
+    }
+    match level {
+        DriftLevel::Major => cell.fg(Color::Red),
+        DriftLevel::Minor => cell.fg(Color::Yellow),
+        DriftLevel::Same => cell.fg(Color::Green),
+    }
+}
 
 pub fn drift_json(rows: &[DriftRow]) -> Result<String> {
     Ok(serde_json::to_string_pretty(rows)?)
@@ -12,7 +36,7 @@ pub fn impact_json(hits: &[ImpactHit]) -> Result<String> {
 }
 
 pub fn impact_table(hits: &[ImpactHit]) -> String {
-    let mut table = Table::new();
+    let mut table = base_table();
     table.set_header(["repo", "file:line", "from", "refs", "jsx", "props"]);
     for hit in hits {
         let props: Vec<&str> = hit.jsx_props.iter().map(String::as_str).collect();
@@ -29,22 +53,24 @@ pub fn impact_table(hits: &[ImpactHit]) -> String {
 }
 
 pub fn drift_table(rows: &[DriftRow], repo_names: &[String]) -> String {
-    let mut table = Table::new();
-    let mut header = vec!["package".to_string()];
-    header.extend(repo_names.iter().cloned());
-    header.push("drift".to_string());
+    // Repos that consume no tracked package would render an all-dash column.
+    let consumers: Vec<&String> = repo_names
+        .iter()
+        .filter(|name| rows.iter().any(|row| row.versions.contains_key(*name)))
+        .collect();
+    let mut table = base_table();
+    let mut header = vec![Cell::new("package")];
+    header.extend(consumers.iter().map(Cell::new));
+    header.push(Cell::new("drift"));
     table.set_header(header);
     for row in rows {
-        let mut cells = vec![row.package.clone()];
-        for repo in repo_names {
-            cells.push(
-                row.versions
-                    .get(repo)
-                    .cloned()
-                    .unwrap_or_else(|| "-".to_string()),
-            );
+        let mut cells = vec![Cell::new(&row.package)];
+        for repo in &consumers {
+            cells.push(Cell::new(
+                row.versions.get(*repo).map(String::as_str).unwrap_or("-"),
+            ));
         }
-        cells.push(format!("{:?}", row.level));
+        cells.push(level_cell(row.level));
         table.add_row(cells);
     }
     table.to_string()
@@ -130,7 +156,7 @@ mod tests {
     #[test]
     fn table_contains_versions_and_dash_for_missing() {
         let rows = sample_rows();
-        let names = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let names = vec!["a".to_string(), "b".to_string()];
         let table = drift_table(&rows, &names);
         let row_line = table
             .lines()
@@ -138,6 +164,52 @@ mod tests {
             .unwrap();
         assert!(row_line.contains("^3.1.32"));
         assert!(row_line.contains("^2.1.56"));
-        assert!(row_line.contains(" - ")); // repo c has no version
+    }
+
+    #[test]
+    fn drift_table_drops_repos_without_tracked_packages_but_keeps_dash_for_partial() {
+        let repos = [
+            Repo {
+                name: "app-a".into(),
+                root: PathBuf::from("/tmp/app-a"),
+                deps: [
+                    (
+                        "lxp-common-components-js".to_string(),
+                        "^3.1.32".to_string(),
+                    ),
+                    ("lxp-common-hooks-js".to_string(), "^0.0.8".to_string()),
+                ]
+                .into_iter()
+                .collect(),
+            },
+            Repo {
+                name: "app-b".into(),
+                root: PathBuf::from("/tmp/app-b"),
+                deps: [(
+                    "lxp-common-components-js".to_string(),
+                    "^2.1.56".to_string(),
+                )]
+                .into_iter()
+                .collect(),
+            },
+            Repo {
+                name: "app-c".into(),
+                root: PathBuf::from("/tmp/app-c"),
+                deps: [("react".to_string(), "^18.0.0".to_string())]
+                    .into_iter()
+                    .collect(),
+            },
+        ];
+        let rows = compute_drift(&repos);
+        let names: Vec<String> = repos.iter().map(|r| r.name.clone()).collect();
+        let table = drift_table(&rows, &names);
+        // app-c consumes no tracked package: its column disappears entirely
+        assert!(!table.contains("app-c"));
+        // app-b lacks hooks-js but consumes components-js: dash in the hooks row
+        let hooks_row = table
+            .lines()
+            .find(|l| l.contains("lxp-common-hooks-js"))
+            .unwrap();
+        assert!(hooks_row.contains(" - "));
     }
 }
