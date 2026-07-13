@@ -1,135 +1,127 @@
 # lxp-scan
 
-Cross-repo FE intelligence CLI for the LeapXpert frontend tree. Point it at a
-directory of repos (e.g. `~/Leapxpert/FE`) and it answers two questions:
+Ask questions across all FE repos at once, from the terminal:
 
-- **impact** — where is a symbol imported and used across all repos?
-- **drift** — which repos are on diverging versions of the shared
-  `lxp-common-*` / `lxp-design-system` packages?
+- **"Ai đang xài symbol này, ở đâu, truyền props gì?"** → `lxp-scan impact`
+- **"Repo nào đang lệch version package lxp-common-*?"** → `lxp-scan drift`
 
-Scans are AST-based (oxc), tsconfig-alias-aware, parallel per file, and never
-abort on a broken file — problems become warnings.
+AST-based (not grep): resolves tsconfig aliases, reads real imports, extracts
+JSX props. Scans ~4,400 files in ~1 second.
 
-## Quick start
-
-The binary is already installed at `~/.cargo/bin/lxp-scan` and `~/.zshenv`
-puts it on PATH — **open a new terminal** (or run `source ~/.cargo/env` in an
-old one) and:
+## 🚀 Quick start
 
 ```bash
-# Version drift of shared lxp-common-* packages across all repos
-lxp-scan drift --root ~/Leapxpert/FE
-
-# Who uses Button from the shared component lib, with which props
-lxp-scan impact Button --from lxp-common-components-js --root ~/Leapxpert/FE
-
-# An intra-repo symbol, resolved through tsconfig aliases
-lxp-scan impact formatMessage --from utils/formatMessage --root ~/Leapxpert/FE
-
-# JSON output (for scripts / AI context)
-lxp-scan impact Toggle --root ~/Leapxpert/FE --json
+cd ~/Leapxpert/FE
+lxp-scan drift
 ```
 
-Tip: `cd ~/Leapxpert/FE` first and you can drop `--root` entirely
-(it defaults to the current directory): `lxp-scan drift`.
+> **`command not found: lxp-scan`?** Terminal đó mở trước khi cài tool.
+> Chạy `source ~/.cargo/env` một lần (hoặc mở tab terminal mới là tự có).
 
-## Install / update
-
-From the repo root (`~/tools/lxp-scan`):
+You should see:
 
 ```
-cargo install --path .
+| package                  | cic-admin-web | lxp-app-admin | lxp-web | lxp-web-client | drift |
+| lxp-common-components-js | ^2.1.56       | ^3.1.32       | ^3.1.25 | ^2.0.64        | Major |
+| lxp-common-constants-js  | ^1.0.13       | ^1.0.24       | ^1.0.24 | ^1.0.21        | Same  |
 ```
 
-Installs (or replaces) `lxp-scan` in `~/.cargo/bin`. To try changes without
-installing, run from source: `cargo run --release -- drift --root ~/Leapxpert/FE`.
+→ `Major` = có repo lệch nguyên major version (ở đây: cic-admin-web và
+lxp-web-client còn ở v2).
 
-## Usage
+Then try impact:
 
-### impact
-
-Find usage sites of a symbol across every repo under `--root`:
-
-```
-lxp-scan impact Button --from lxp-common-components-js --root ~/Leapxpert/FE
+```bash
+lxp-scan impact Button --from lxp-common-components-js
 ```
 
 ```
-+----------------+---------------------------------------------------+---------------------------------------------+------+-----+----------------------------+
-| repo           | file:line                                         | from                                        | refs | jsx | props                      |
-+============================================================================================================================================================+
-| lxp-web        | src/modules/Authenticate/components/LoginForm.tsx:5 | lxp-common-components-js/components/Button | 0    | 1   | className, disabled, ...   |
+| repo    | file:line              | from                                        | refs | jsx | props                |
+| lxp-web | src/.../LoginForm.tsx:5| lxp-common-components-js/components/Button  | 0    | 1   | className, disabled  |
 ...
 12 usage site(s) in 12 file(s)
 ```
 
-Each row is one import site: the resolved import source, non-JSX identifier
-references (`refs`), JSX renders of the component (`jsx`), and the union of
-JSX props used. Intra-repo imports are resolved through tsconfig
-`baseUrl`/`paths`, so alias and relative imports of the same file display as
-the same repo-relative path and match the same `--from` filter:
+## 📖 Reading the impact table
 
+| Column | Meaning |
+|---|---|
+| `file:line` | File + dòng của câu `import` (relative với repo) |
+| `from` | Nguồn import sau khi resolve — package giữ nguyên, file nội bộ thành đường dẫn repo-relative (alias `utils/x` và relative `../utils/x` đều ra cùng một đường dẫn) |
+| `refs` | Số lần dùng như biến/hàm/type (không tính JSX tag) |
+| `jsx` | Số lần render `<Symbol ...>` |
+| `props` | Các prop từng được truyền cho component (gộp từ mọi lần render trong file) |
+
+## 🍳 Recipes
+
+**Sắp sửa một shared component — vỡ chỗ nào?**
+```bash
+lxp-scan impact Toggle --from lxp-common-components-js --root ~/Leapxpert/FE
 ```
+Nhìn cột `props` để biết prop nào đang được xài thật (đổi prop không ai truyền = an toàn).
+
+**Sửa một util nội bộ trong lxp-app-admin:**
+```bash
 lxp-scan impact formatMessage --from utils/formatMessage --root ~/Leapxpert/FE
 ```
+`--from` nhận cả đường dẫn nội bộ (đã resolve alias) lẫn tên package.
 
-Flags:
+**Symbol tên phổ biến (Button, Modal...):** luôn kèm `--from`, không thì dính
+các symbol trùng tên nội bộ của từng repo.
 
-- `--from <substring>` — keep only hits whose resolved import source contains
-  the substring (package name verbatim, repo-relative path for local files)
-- `--root <dir>` — workspace root containing the repos (default `.`)
-- `--json` — machine-readable output instead of the table
-- `--verbose` — print per-file warnings (parse failures, malformed
-  package.json/tsconfig) to stderr; without it a one-line
-  `N warning(s) suppressed` notice is shown
-
-### drift
-
-Compare `lxp-common-*` / `lxp-design-system` dependency versions across repos:
-
-```
-lxp-scan drift --root ~/Leapxpert/FE
+**Feed kết quả cho AI / script:**
+```bash
+lxp-scan impact Button --from lxp-common-components-js --root ~/Leapxpert/FE --json
 ```
 
-```
-| package                  | cic-admin-web | lxp-app-admin | lxp-web | lxp-web-client | ... | drift |
-| lxp-common-components-js | ^2.1.56       | ^3.1.32       | ^3.1.25 | ^2.0.64        |     | Major |
-```
+**Nghi ngờ kết quả thiếu?** Thêm `--verbose` để xem warnings (file parse lỗi,
+tsconfig hỏng...). Không có `--verbose` thì tool chỉ in một dòng
+`N warning(s) suppressed`.
 
-Rows are marked `Major`, `Minor`, or `Same` by the highest semver component
-that differs across repos. Same flags: `--root`, `--json`, `--verbose`.
+## 🎛 Flags
 
-## Known v1 limitations
+| Flag | Default | |
+|---|---|---|
+| `--root <dir>` | `.` | Thư mục chứa các repo (mỗi repo = thư mục con có package.json) |
+| `--from <substring>` | — | (impact) Lọc theo nguồn import |
+| `--json` | table | Output JSON ra stdout |
+| `--verbose` | off | In warnings ra stderr |
 
-- Namespace imports (`import * as X`), re-export chains
-  (`export { X } from ...`), dynamic `import()`, and `require()` are not
-  followed.
-- Type-position references count toward impact (a `TButtonProps` usage of an
-  imported type is a ref like any other).
-- Member JSX tags (`<Button.Icon />`) are reported as refs to the root
-  identifier, not as `jsx` uses.
-- Drift ignores patch-level differences and skips version strings it cannot
-  parse (`workspace:*`, `latest`, git URLs).
-- A "repo" is a first-level directory under `--root` containing a
-  `package.json`.
-- Hidden directories (dotfiles, e.g. `.claude/worktrees/`) are skipped, in
-  addition to `node_modules`/`build`/`dist`/`coverage` and `.gitignore` rules —
-  a grep may therefore "find" hits the scanner correctly excludes.
-- tsconfig `extends` chains are not followed; a repo whose `paths`/`baseUrl`
-  live in an extended base config silently loses alias resolution (no FE repo
-  does this today).
+Exit code: `0` kể cả khi 0 kết quả; `1` khi lỗi (root không tồn tại...).
+Bảng ra stdout, warnings/summary ra stderr — pipe thoải mái.
 
-## Development
+## ⚠️ Known v1 limitations
 
-```
-cargo test
+- Không follow: namespace import (`import * as X`), re-export chain
+  (`export { X } from`), dynamic `import()`, `require()`.
+- Type-position references (dùng làm type) **được tính** vào `refs` — đổi type
+  cũng là impact.
+- `<Button.Icon />` tính là `refs` của `Button`, không tính `jsx`.
+- `drift` bỏ qua khác biệt patch-level và skip version không parse được
+  (`workspace:*`, `latest`, git URL).
+- Thư mục ẩn (`.claude/worktrees/`...) bị skip — grep có thể "thấy" hit mà tool
+  cố tình loại.
+- tsconfig `extends` chưa được follow (chưa repo FE nào dùng).
+
+## 🔧 Troubleshooting
+
+| Lỗi | Fix |
+|---|---|
+| `command not found: lxp-scan` | Terminal mở trước khi cài → `source ~/.cargo/env` hoặc mở tab mới |
+| Bảng rỗng khi biết chắc có usage | Check `--from` có đúng không; thử bỏ `--from`; thêm `--verbose` xem file có bị parse lỗi |
+| Kết quả khác grep | Đọc phần limitations — thường là re-export/namespace import (tool bỏ qua) hoặc multi-line import (grep bỏ sót) |
+
+## 🛠 Development
+
+```bash
+cd ~/tools/lxp-scan
+cargo test                              # 35 tests (unit + integration trên fixtures)
 cargo clippy --all-targets -- -D warnings
-cargo install --path .
+cargo install --path .                  # build + thay binary trong ~/.cargo/bin
+cargo run --release -- drift --root ~/Leapxpert/FE   # chạy không cần install
 ```
 
-Integration tests run against the mini-workspace in `tests/fixtures/`.
+## 🗺 Roadmap
 
-## Roadmap
-
-- Phase 2: `context` command — emit an LLM-ready context pack (definition +
-  usage excerpts) for a symbol.
+- Phase 2: `lxp-scan context <symbol>` — xuất context pack (definition + usage
+  excerpts) sẵn để paste cho AI agent.
