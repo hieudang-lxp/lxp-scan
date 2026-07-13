@@ -18,6 +18,9 @@ pub fn discover_repos(root: &Path, warnings: &mut Vec<String>) -> Result<Vec<Rep
         if !dir.is_dir() {
             continue;
         }
+        if entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
         let pkg = dir.join("package.json");
         if !pkg.is_file() {
             continue;
@@ -84,6 +87,12 @@ mod tests {
     #[test]
     fn nonexistent_root_is_an_error() {
         assert!(discover_repos(Path::new("/definitely/not/here"), &mut vec![]).is_err());
+    }
+
+    #[test]
+    fn hidden_directories_are_not_repos() {
+        let repos = discover_repos(&fixture_root(), &mut vec![]).unwrap();
+        assert!(!repos.iter().any(|r| r.name == ".hidden-repo"));
     }
 
     #[test]

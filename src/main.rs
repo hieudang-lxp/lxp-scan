@@ -84,6 +84,13 @@ fn run_drift(root: &std::path::Path, json: bool, verbose: bool) -> anyhow::Resul
         let names: Vec<String> = repos.iter().map(|r| r.name.clone()).collect();
         println!("{}", lxp_scan::report::drift_table(&rows, &names));
     }
+    if rows.is_empty() {
+        eprintln!(
+            "no lxp-common-*/lxp-design-system dependencies found under {} ({} repo(s) discovered) — is --root pointing at the FE workspace?",
+            root.display(),
+            repos.len()
+        );
+    }
     Ok(())
 }
 
@@ -106,6 +113,12 @@ fn run_impact(
             .map(|h| (h.repo.as_str(), h.file.as_str()))
             .collect();
         eprintln!("{} usage site(s) in {} file(s)", hits.len(), files.len());
+        if hits.is_empty() {
+            eprintln!(
+                "hint: no matches under {} — check --root, drop/adjust --from, or add --verbose",
+                root.display()
+            );
+        }
     }
     Ok(())
 }
