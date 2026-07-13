@@ -102,6 +102,10 @@ accuracy is essential because arbitrary symbol names collide often.
 - Real-world smoke check (manual, not CI): `impact Button --from
   lxp-common-components-js` over `~/Leapxpert/FE` should be consistent with
   the independently measured ~27 importing files.
+  *(Post-implementation note: the ~27 figure counted files importing anything
+  from the Button module path — mostly `EButtonType`/`ButtonMenu`. Actual
+  `Button`-symbol importers: 12, grep-cross-checked; the tool also catches a
+  multi-line import grep misses and excludes hidden-worktree duplicates.)*
 
 ## Dependencies (Rust crates)
 

@@ -86,6 +86,12 @@ that differs across repos. Same flags: `--root`, `--json`, `--verbose`.
   parse (`workspace:*`, `latest`, git URLs).
 - A "repo" is a first-level directory under `--root` containing a
   `package.json`.
+- Hidden directories (dotfiles, e.g. `.claude/worktrees/`) are skipped, in
+  addition to `node_modules`/`build`/`dist`/`coverage` and `.gitignore` rules —
+  a grep may therefore "find" hits the scanner correctly excludes.
+- tsconfig `extends` chains are not followed; a repo whose `paths`/`baseUrl`
+  live in an extended base config silently loses alias resolution (no FE repo
+  does this today).
 
 ## Development
 
