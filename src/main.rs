@@ -38,10 +38,13 @@ enum Cmd {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result: anyhow::Result<()> = match cli.cmd {
-        Cmd::Impact { .. } => {
-            eprintln!("impact: not implemented yet");
-            Ok(())
-        }
+        Cmd::Impact {
+            symbol,
+            from,
+            root,
+            json,
+            verbose,
+        } => run_impact(&root, &symbol, from.as_deref(), json, verbose),
         Cmd::Drift {
             root,
             json,
@@ -71,6 +74,33 @@ fn run_drift(root: &std::path::Path, json: bool, verbose: bool) -> anyhow::Resul
     } else {
         let names: Vec<String> = repos.iter().map(|r| r.name.clone()).collect();
         println!("{}", lxp_scan::report::drift_table(&rows, &names));
+    }
+    Ok(())
+}
+
+fn run_impact(
+    root: &std::path::Path,
+    symbol: &str,
+    from: Option<&str>,
+    json: bool,
+    verbose: bool,
+) -> anyhow::Result<()> {
+    let mut warnings = Vec::new();
+    let hits = lxp_scan::impact::run_impact(root, symbol, from, &mut warnings)?;
+    if verbose {
+        for w in &warnings {
+            eprintln!("warn: {w}");
+        }
+    }
+    if json {
+        println!("{}", lxp_scan::report::impact_json(&hits)?);
+    } else {
+        println!("{}", lxp_scan::report::impact_table(&hits));
+        let files: std::collections::BTreeSet<(&str, &str)> = hits
+            .iter()
+            .map(|h| (h.repo.as_str(), h.file.as_str()))
+            .collect();
+        eprintln!("{} usage site(s) in {} file(s)", hits.len(), files.len());
     }
     Ok(())
 }
