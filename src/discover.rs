@@ -69,9 +69,8 @@ mod tests {
     fn finds_only_dirs_with_package_json() {
         let repos = discover_repos(&fixture_root(), &mut vec![]).unwrap();
         let names: Vec<_> = repos.iter().map(|r| r.name.as_str()).collect();
-        assert!(names.contains(&"app-one"));
-        assert!(names.contains(&"app-two"));
-        assert!(!names.contains(&"not-a-repo"));
+        // broken-repo is excluded because its package.json is malformed
+        assert_eq!(names, ["app-one", "app-two"]);
     }
 
     #[test]

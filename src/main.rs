@@ -69,8 +69,15 @@ mod tests {
     #[test]
     fn impact_parses_symbol_and_flags() {
         let cli = Cli::parse_from([
-            "lxp-scan", "impact", "Button", "--from", "lxp-design-system", "--root", "/repos",
-            "--json", "--verbose",
+            "lxp-scan",
+            "impact",
+            "Button",
+            "--from",
+            "lxp-design-system",
+            "--root",
+            "/repos",
+            "--json",
+            "--verbose",
         ]);
         match cli.cmd {
             Cmd::Impact {
