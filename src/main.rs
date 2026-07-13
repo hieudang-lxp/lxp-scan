@@ -42,10 +42,11 @@ fn main() -> ExitCode {
             eprintln!("impact: not implemented yet");
             Ok(())
         }
-        Cmd::Drift { .. } => {
-            eprintln!("drift: not implemented yet");
-            Ok(())
-        }
+        Cmd::Drift {
+            root,
+            json,
+            verbose,
+        } => run_drift(&root, json, verbose),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -54,6 +55,24 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn run_drift(root: &std::path::Path, json: bool, verbose: bool) -> anyhow::Result<()> {
+    let mut warnings = Vec::new();
+    let repos = lxp_scan::discover::discover_repos(root, &mut warnings)?;
+    if verbose {
+        for w in &warnings {
+            eprintln!("warn: {w}");
+        }
+    }
+    let rows = lxp_scan::drift::compute_drift(&repos);
+    if json {
+        println!("{}", lxp_scan::report::drift_json(&rows)?);
+    } else {
+        let names: Vec<String> = repos.iter().map(|r| r.name.clone()).collect();
+        println!("{}", lxp_scan::report::drift_table(&rows, &names));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
