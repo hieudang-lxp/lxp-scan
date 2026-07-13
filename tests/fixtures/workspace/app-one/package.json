@@ -1,0 +1,10 @@
+{
+  "name": "app-one",
+  "dependencies": {
+    "lxp-common-components-js": "^3.1.32",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "lxp-common-constants-js": "^1.0.24"
+  }
+}

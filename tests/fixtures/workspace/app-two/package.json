@@ -1,0 +1,6 @@
+{
+  "name": "app-two",
+  "dependencies": {
+    "lxp-common-components-js": "^2.1.56"
+  }
+}
