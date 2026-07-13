@@ -10,13 +10,39 @@ directory of repos (e.g. `~/Leapxpert/FE`) and it answers two questions:
 Scans are AST-based (oxc), tsconfig-alias-aware, parallel per file, and never
 abort on a broken file — problems become warnings.
 
-## Install
+## Quick start
+
+The binary is already installed at `~/.cargo/bin/lxp-scan` and `~/.zshenv`
+puts it on PATH — **open a new terminal** (or run `source ~/.cargo/env` in an
+old one) and:
+
+```bash
+# Version drift of shared lxp-common-* packages across all repos
+lxp-scan drift --root ~/Leapxpert/FE
+
+# Who uses Button from the shared component lib, with which props
+lxp-scan impact Button --from lxp-common-components-js --root ~/Leapxpert/FE
+
+# An intra-repo symbol, resolved through tsconfig aliases
+lxp-scan impact formatMessage --from utils/formatMessage --root ~/Leapxpert/FE
+
+# JSON output (for scripts / AI context)
+lxp-scan impact Toggle --root ~/Leapxpert/FE --json
+```
+
+Tip: `cd ~/Leapxpert/FE` first and you can drop `--root` entirely
+(it defaults to the current directory): `lxp-scan drift`.
+
+## Install / update
+
+From the repo root (`~/tools/lxp-scan`):
 
 ```
 cargo install --path .
 ```
 
-Installs `lxp-scan` into `~/.cargo/bin`.
+Installs (or replaces) `lxp-scan` in `~/.cargo/bin`. To try changes without
+installing, run from source: `cargo run --release -- drift --root ~/Leapxpert/FE`.
 
 ## Usage
 
