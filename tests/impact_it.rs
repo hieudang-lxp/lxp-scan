@@ -18,9 +18,27 @@ fn finds_button_across_both_apps() {
 }
 
 #[test]
+fn warns_on_unparseable_file_but_keeps_other_hits() {
+    let mut warnings = Vec::new();
+    let hits = lxp_scan::impact::run_impact(&workspace(), "Button", None, &mut warnings).unwrap();
+    // broken.ts is unparseable: it must warn, not kill the scan
+    assert!(
+        warnings.iter().any(|w| w.contains("broken.ts")),
+        "expected a warning mentioning broken.ts, got: {warnings:?}"
+    );
+    // the healthy file in the same repo is still reported
+    assert!(
+        hits.iter()
+            .any(|h| h.repo == "app-two" && h.file.ends_with("other.tsx")),
+        "expected the app-two other.tsx hit to survive, got: {hits:?}"
+    );
+}
+
+#[test]
 fn from_filter_narrows_by_source() {
     let mut warnings = Vec::new();
     let all = lxp_scan::impact::run_impact(&workspace(), "Button", None, &mut warnings).unwrap();
+    assert!(!all.is_empty());
     let filtered =
         lxp_scan::impact::run_impact(&workspace(), "Button", Some("fake-lib"), &mut warnings)
             .unwrap();
@@ -41,6 +59,13 @@ fn alias_and_relative_hits_match_same_from_filter() {
         &mut warnings,
     )
     .unwrap();
-    assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].repo, "app-one");
+    // page.tsx imports via the tsconfig alias, section.tsx via a relative
+    // path; both must resolve to the same display and match the same filter
+    assert_eq!(hits.len(), 2, "expected alias + relative hits: {hits:?}");
+    for hit in &hits {
+        assert_eq!(hit.repo, "app-one");
+        assert_eq!(hit.source, "src/utils/helpers.ts");
+    }
+    assert!(hits.iter().any(|h| h.file.ends_with("page.tsx")));
+    assert!(hits.iter().any(|h| h.file.ends_with("section.tsx")));
 }

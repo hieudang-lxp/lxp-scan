@@ -60,14 +60,23 @@ fn main() -> ExitCode {
     }
 }
 
+fn report_warnings(warnings: &[String], verbose: bool) {
+    if verbose {
+        for w in warnings {
+            eprintln!("warn: {w}");
+        }
+    } else if !warnings.is_empty() {
+        eprintln!(
+            "{} warning(s) suppressed; rerun with --verbose",
+            warnings.len()
+        );
+    }
+}
+
 fn run_drift(root: &std::path::Path, json: bool, verbose: bool) -> anyhow::Result<()> {
     let mut warnings = Vec::new();
     let repos = lxp_scan::discover::discover_repos(root, &mut warnings)?;
-    if verbose {
-        for w in &warnings {
-            eprintln!("warn: {w}");
-        }
-    }
+    report_warnings(&warnings, verbose);
     let rows = lxp_scan::drift::compute_drift(&repos);
     if json {
         println!("{}", lxp_scan::report::drift_json(&rows)?);
@@ -87,11 +96,7 @@ fn run_impact(
 ) -> anyhow::Result<()> {
     let mut warnings = Vec::new();
     let hits = lxp_scan::impact::run_impact(root, symbol, from, &mut warnings)?;
-    if verbose {
-        for w in &warnings {
-            eprintln!("warn: {w}");
-        }
-    }
+    report_warnings(&warnings, verbose);
     if json {
         println!("{}", lxp_scan::report::impact_json(&hits)?);
     } else {

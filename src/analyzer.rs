@@ -41,8 +41,15 @@ pub fn analyze_file(
     symbol: &str,
 ) -> anyhow::Result<Vec<FileFindings>> {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(path)
+    let mut source_type = SourceType::from_path(path)
         .map_err(|e| anyhow!("unsupported source type for {}: {e}", path.display()))?;
+    // Legacy .js files in the target repos routinely contain JSX, but oxc's
+    // default SourceType for .js has JSX disabled. Enable it for .js only:
+    // .jsx/.tsx already have it, and .ts must keep it off (JSX syntax is
+    // ambiguous with generics/type assertions in .ts).
+    if path.extension().and_then(|e| e.to_str()) == Some("js") {
+        source_type = source_type.with_jsx(true);
+    }
     let ret = Parser::new(&allocator, source_text, source_type).parse();
 
     // Err criterion (verified against oxc 0.139 behavior): the parser is
@@ -217,6 +224,20 @@ mod tests {
     /// Only the extension matters for SourceType detection.
     fn tsx(name: &str) -> PathBuf {
         PathBuf::from(format!("/fixtures/{name}.tsx"))
+    }
+
+    #[test]
+    fn jsx_in_plain_js_file_parses_and_matches() {
+        // lxp-web has hundreds of legacy .js files containing JSX; they must
+        // parse (oxc's default SourceType for .js has JSX disabled).
+        let src = r#"
+import Button from 'fake-lib/components/Button'
+export const P = () => <Button disabled />
+"#;
+        let path = PathBuf::from("/fixtures/legacy.js");
+        let findings = analyze_file(&path, src, "Button").unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].jsx_uses, 1);
     }
 
     #[test]
