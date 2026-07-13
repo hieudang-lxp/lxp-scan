@@ -1,0 +1,9 @@
+{
+  // build config
+  "compilerOptions": {
+    "baseUrl": "src",
+    "paths": {
+      "utils/*": ["utils/*"],
+    }
+  }
+}
