@@ -216,6 +216,77 @@ pub fn find_declaration(
     Ok(None)
 }
 
+/// Lists exported VALUE declarations (`export const/function/class`, plus
+/// named `export default function/class`) as (name, 1-based line). Type-only
+/// declarations (interface/type/enum) and re-exports are excluded: for
+/// duplicate detection a shared interface name is noise, a shared component
+/// or util implementation is the signal.
+pub fn exported_values(path: &Path, source_text: &str) -> anyhow::Result<Vec<(String, usize)>> {
+    use oxc_ast::ast::{Declaration, ExportDefaultDeclarationKind};
+
+    let allocator = Allocator::default();
+    let mut source_type = SourceType::from_path(path)
+        .map_err(|e| anyhow!("unsupported source type for {}: {e}", path.display()))?;
+    if path.extension().and_then(|e| e.to_str()) == Some("js") {
+        source_type = source_type.with_jsx(true);
+    }
+    let ret = Parser::new(&allocator, source_text, source_type).parse();
+    if ret.panicked || (ret.diagnostics.has_errors() && ret.program.body.is_empty()) {
+        bail!(
+            "failed to parse {}: {} parser diagnostic(s)",
+            path.display(),
+            ret.diagnostics.len()
+        );
+    }
+
+    let mut out = Vec::new();
+    for stmt in &ret.program.body {
+        match stmt {
+            Statement::ExportNamedDeclaration(e) => {
+                let line = line_of(source_text, e.span.start);
+                match &e.declaration {
+                    Some(Declaration::VariableDeclaration(v)) => {
+                        for d in &v.declarations {
+                            if let Some(name) = d.id.get_identifier_name() {
+                                out.push((name.to_string(), line));
+                            }
+                        }
+                    }
+                    Some(Declaration::FunctionDeclaration(f)) => {
+                        if let Some(id) = &f.id {
+                            out.push((id.name.to_string(), line));
+                        }
+                    }
+                    Some(Declaration::ClassDeclaration(c)) => {
+                        if let Some(id) = &c.id {
+                            out.push((id.name.to_string(), line));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Statement::ExportDefaultDeclaration(e) => {
+                let line = line_of(source_text, e.span.start);
+                match &e.declaration {
+                    ExportDefaultDeclarationKind::FunctionDeclaration(f) => {
+                        if let Some(id) = &f.id {
+                            out.push((id.name.to_string(), line));
+                        }
+                    }
+                    ExportDefaultDeclarationKind::ClassDeclaration(c) => {
+                        if let Some(id) = &c.id {
+                            out.push((id.name.to_string(), line));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(out)
+}
+
 /// Counts usages of one local binding.
 ///
 /// Semantics contract:
@@ -454,6 +525,37 @@ console.log(Button)
         let src = "import { from 'nope";
         let result = analyze_file(&tsx("broken"), src, "Button");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn exported_values_lists_const_function_class_but_not_types_or_reexports() {
+        let src = r#"
+export const Button = () => null
+export function formatDate() {}
+export class Store {}
+export interface ButtonProps { a?: string }
+export type Kind = 'a'
+export * from './other'
+export { Inner } from './inner'
+const Hidden = () => null
+"#;
+        let exports = exported_values(&tsx("exports"), src).unwrap();
+        let names: Vec<(&str, usize)> = exports
+            .iter()
+            .map(|(name, line)| (name.as_str(), *line))
+            .collect();
+        assert_eq!(
+            names,
+            vec![("Button", 2), ("formatDate", 3), ("Store", 4)],
+            "types, re-exports and non-exported decls are excluded"
+        );
+    }
+
+    #[test]
+    fn exported_values_includes_named_default_export() {
+        let src = "export default function Widget() {\n  return null\n}\n";
+        let exports = exported_values(&tsx("defexp"), src).unwrap();
+        assert_eq!(exports, vec![("Widget".to_string(), 1)]);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use crate::context::ContextPack;
 use crate::drift::{DriftLevel, DriftRow};
+use crate::dupes::DupeGroup;
 use crate::impact::ImpactHit;
 use anyhow::Result;
 use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_BORDERS_ONLY};
@@ -69,6 +70,26 @@ pub fn impact_report(hits: &[ImpactHit]) -> String {
             parts.push(format!("props: {}", props.join(", ")));
         }
         out.push_str(&format!("      {}\n", parts.join(" · ")));
+    }
+    out
+}
+
+pub fn dupes_json(groups: &[DupeGroup]) -> Result<String> {
+    Ok(serde_json::to_string_pretty(groups)?)
+}
+
+/// Same grouped-list shape as the impact report: header per name, one line
+/// per declaration site.
+pub fn dupes_report(groups: &[DupeGroup]) -> String {
+    let mut out = String::new();
+    for (i, group) in groups.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(&format!("{} — {} repos\n", group.name, group.repo_count));
+        for site in &group.sites {
+            out.push_str(&format!("  {} · {}:{}\n", site.repo, site.file, site.line));
+        }
     }
     out
 }

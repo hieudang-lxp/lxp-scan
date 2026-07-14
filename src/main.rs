@@ -40,6 +40,20 @@ enum Cmd {
         #[arg(long)]
         verbose: bool,
     },
+    /// Run as an MCP stdio server exposing impact/context/drift/dupes to agents
+    Mcp {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+    },
+    /// Find same-name exported components declared in more than one repo
+    Dupes {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        verbose: bool,
+    },
     /// Show lxp-common-* / lxp-design-system version drift across repos
     Drift {
         #[arg(long, default_value = ".")]
@@ -69,6 +83,12 @@ fn main() -> ExitCode {
             json,
             verbose,
         } => run_context(&root, &symbol, from.as_deref(), sites, json, verbose),
+        Cmd::Mcp { root } => lxp_scan::mcp::serve(&root),
+        Cmd::Dupes {
+            root,
+            json,
+            verbose,
+        } => run_dupes(&root, json, verbose),
         Cmd::Drift {
             root,
             json,
@@ -180,6 +200,22 @@ fn run_context(
                 root.display()
             );
         }
+    }
+    Ok(())
+}
+
+fn run_dupes(root: &std::path::Path, json: bool, verbose: bool) -> anyhow::Result<()> {
+    let mut warnings = Vec::new();
+    let groups = lxp_scan::dupes::find_dupes(root, &mut warnings)?;
+    report_warnings(&warnings, verbose);
+    if json {
+        println!("{}", lxp_scan::report::dupes_json(&groups)?);
+    } else {
+        print!("{}", lxp_scan::report::dupes_report(&groups));
+        eprintln!(
+            "\n{} name(s) exported from more than one repo",
+            groups.len()
+        );
     }
     Ok(())
 }

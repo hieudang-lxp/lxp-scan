@@ -4,7 +4,9 @@ Cross-repo intelligence CLI for the LeapXpert FE tree:
 
 - **`impact`** — where is a symbol imported and used, with which props?
 - **`context`** — LLM-ready context pack for a symbol: definition + usage excerpts
+- **`dupes`** — same-name components implemented independently in multiple repos
 - **`drift`** — which repos are on diverging versions of `lxp-common-*` packages?
+- **`mcp`** — stdio MCP server exposing all of the above to coding agents
 
 AST-based (oxc), tsconfig-alias-aware, parallel. Scans ~4,400 files in ~1s.
 
@@ -95,6 +97,33 @@ lxp-scan impact Button --from lxp-common-components-js --root ~/Leapxpert/FE --j
 
 Suspect missing results? Add `--verbose` to see per-file warnings; without it
 only a `N warning(s) suppressed` notice is printed.
+
+## Duplicate components
+
+```bash
+lxp-scan dupes --root ~/Leapxpert/FE
+```
+
+Lists capitalized exported values (`const`/`function`/`class`, excluding
+`*Props`, tests, and stories) declared in **more than one repo** — parallel
+implementations that are candidates for consolidation into lxp-common:
+
+```
+ConfirmPopup — 2 repos
+  lxp-app-admin · src/components/ConfirmPopup/index.tsx:33
+  lxp-web · src/components/ConfirmPopup/index.tsx:41
+```
+
+## MCP server for Claude Code
+
+```bash
+claude mcp add --scope user lxp-scan -- ~/.local/bin/lxp-scan mcp --root ~/Leapxpert/FE
+```
+
+Runs a stdio MCP server exposing `impact`, `context`, `drift`, and `dupes` as
+tools, so Claude Code pulls cross-repo ground truth itself instead of
+guessing. The root is fixed at registration time; tool arguments mirror the
+CLI flags (`symbol`, `from`, `sites`).
 
 ## Flags
 
