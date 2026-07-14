@@ -107,12 +107,21 @@ fn run_impact(
     if json {
         println!("{}", lxp_scan::report::impact_json(&hits)?);
     } else {
-        println!("{}", lxp_scan::report::impact_table(&hits));
+        if !hits.is_empty() {
+            print!("{}", lxp_scan::report::impact_report(&hits));
+        }
         let files: std::collections::BTreeSet<(&str, &str)> = hits
             .iter()
             .map(|h| (h.repo.as_str(), h.file.as_str()))
             .collect();
-        eprintln!("{} usage site(s) in {} file(s)", hits.len(), files.len());
+        let repos: std::collections::BTreeSet<&str> =
+            hits.iter().map(|h| h.repo.as_str()).collect();
+        eprintln!(
+            "\n{} usage site(s) in {} file(s) across {} repo(s)",
+            hits.len(),
+            files.len(),
+            repos.len()
+        );
         if hits.is_empty() {
             eprintln!(
                 "hint: no matches under {} — check --root, drop/adjust --from, or add --verbose",

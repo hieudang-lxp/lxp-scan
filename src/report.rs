@@ -35,21 +35,41 @@ pub fn impact_json(hits: &[ImpactHit]) -> Result<String> {
     Ok(serde_json::to_string_pretty(hits)?)
 }
 
-pub fn impact_table(hits: &[ImpactHit]) -> String {
-    let mut table = base_table();
-    table.set_header(["repo", "file:line", "from", "refs", "jsx", "props"]);
+/// Grouped, borderless report: one header per repo, two lines per hit.
+/// Tables broke down here — long paths plus prop lists either wrapped into
+/// multi-line cells (TTY) or produced 400-char rows (piped).
+pub fn impact_report(hits: &[ImpactHit]) -> String {
+    let mut out = String::new();
+    let mut current_repo: Option<&str> = None;
     for hit in hits {
-        let props: Vec<&str> = hit.jsx_props.iter().map(String::as_str).collect();
-        table.add_row([
-            hit.repo.clone(),
-            format!("{}:{}", hit.file, hit.line),
-            hit.source.clone(),
-            hit.refs.to_string(),
-            hit.jsx_uses.to_string(),
-            props.join(", "),
-        ]);
+        if current_repo != Some(hit.repo.as_str()) {
+            if current_repo.is_some() {
+                out.push('\n');
+            }
+            let sites = hits.iter().filter(|h| h.repo == hit.repo).count();
+            let plural = if sites == 1 { "" } else { "s" };
+            out.push_str(&format!("{} ({sites} site{plural})\n", hit.repo));
+            current_repo = Some(hit.repo.as_str());
+        }
+        out.push_str(&format!("  {}:{}\n", hit.file, hit.line));
+        let mut parts = Vec::new();
+        if hit.refs > 0 {
+            parts.push(format!("ref ×{}", hit.refs));
+        }
+        if hit.jsx_uses > 0 {
+            parts.push(format!("jsx ×{}", hit.jsx_uses));
+        }
+        if parts.is_empty() {
+            parts.push("import only".to_string());
+        }
+        parts.push(format!("from {}", hit.source));
+        if !hit.jsx_props.is_empty() {
+            let props: Vec<&str> = hit.jsx_props.iter().map(String::as_str).collect();
+            parts.push(format!("props: {}", props.join(", ")));
+        }
+        out.push_str(&format!("      {}\n", parts.join(" · ")));
     }
-    table.to_string()
+    out
 }
 
 pub fn drift_table(rows: &[DriftRow], repo_names: &[String]) -> String {
@@ -120,15 +140,35 @@ mod tests {
     }
 
     fn sample_hits() -> Vec<ImpactHit> {
-        vec![ImpactHit {
-            repo: "app-one".to_string(),
-            file: "src/page.tsx".to_string(),
-            line: 1,
-            source: "fake-lib/components/Button".to_string(),
-            refs: 0,
-            jsx_uses: 1,
-            jsx_props: ["variant", "size"].iter().map(|s| s.to_string()).collect(),
-        }]
+        vec![
+            ImpactHit {
+                repo: "app-one".to_string(),
+                file: "src/page.tsx".to_string(),
+                line: 1,
+                source: "fake-lib/components/Button".to_string(),
+                refs: 0,
+                jsx_uses: 1,
+                jsx_props: ["variant", "size"].iter().map(|s| s.to_string()).collect(),
+            },
+            ImpactHit {
+                repo: "app-one".to_string(),
+                file: "src/util.ts".to_string(),
+                line: 3,
+                source: "fake-lib/components/Button".to_string(),
+                refs: 2,
+                jsx_uses: 0,
+                jsx_props: Default::default(),
+            },
+            ImpactHit {
+                repo: "app-two".to_string(),
+                file: "src/other.tsx".to_string(),
+                line: 7,
+                source: "fake-lib/components/Button".to_string(),
+                refs: 0,
+                jsx_uses: 0,
+                jsx_props: Default::default(),
+            },
+        ]
     }
 
     #[test]
@@ -140,17 +180,32 @@ mod tests {
     }
 
     #[test]
-    fn impact_table_row_has_location_source_counts_and_joined_props() {
-        let table = impact_table(&sample_hits());
-        let row_line = table
-            .lines()
-            .find(|l| l.contains("app-one"))
-            .expect("data row for app-one");
-        assert!(row_line.contains("src/page.tsx:1"));
-        assert!(row_line.contains("fake-lib/components/Button"));
-        assert!(row_line.contains(" 0 "));
-        assert!(row_line.contains(" 1 "));
-        assert!(row_line.contains("size, variant"));
+    fn impact_report_groups_hits_under_one_header_per_repo() {
+        let report = impact_report(&sample_hits());
+        let lines: Vec<&str> = report.lines().collect();
+        assert_eq!(lines[0], "app-one (2 sites)");
+        assert_eq!(
+            report.lines().filter(|l| l.starts_with("app-one")).count(),
+            1
+        );
+        assert!(report.contains("\napp-two (1 site)\n"));
+    }
+
+    #[test]
+    fn impact_report_hit_lines_carry_location_counts_source_and_props() {
+        let report = impact_report(&sample_hits());
+        assert!(report.contains("  src/page.tsx:1\n"));
+        assert!(report.contains("jsx ×1"));
+        assert!(report.contains("props: size, variant"));
+        assert!(report.contains("ref ×2"));
+        assert!(report.contains("from fake-lib/components/Button"));
+        // import with no refs/jsx must still say something, not render an empty line
+        assert!(report.contains("import only"));
+    }
+
+    #[test]
+    fn impact_report_on_no_hits_is_empty() {
+        assert_eq!(impact_report(&[]), "");
     }
 
     #[test]
