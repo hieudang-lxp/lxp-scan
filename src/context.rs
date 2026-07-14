@@ -21,6 +21,17 @@ pub struct UsageExcerpt {
     pub code: String,
 }
 
+/// A different component that happens to share the symbol's name; its sites
+/// are excluded from the pack so stats/excerpts never mix two APIs.
+#[derive(Serialize, Debug)]
+pub struct SameNameGroup {
+    /// repo defining the other component
+    pub repo: String,
+    pub sites: usize,
+    /// most common resolved source in the group — pass as --from to repack it
+    pub from_hint: String,
+}
+
 #[derive(Serialize, Debug)]
 pub struct ContextPack {
     pub symbol: String,
@@ -31,6 +42,7 @@ pub struct ContextPack {
     pub prop_counts: Vec<(String, usize)>,
     pub definition: Option<Definition>,
     pub excerpts: Vec<UsageExcerpt>,
+    pub same_name: Vec<SameNameGroup>,
 }
 
 /// Builds the LLM-ready context pack: full impact scan, prop frequencies,
@@ -43,7 +55,39 @@ pub fn build_context(
     warnings: &mut Vec<String>,
 ) -> anyhow::Result<ContextPack> {
     let repos = discover_repos(root, warnings)?;
-    let hits = run_impact(root, symbol, from, warnings)?;
+    let all_hits = run_impact(root, symbol, from, warnings)?;
+
+    // Same-name components must not blend into one pack: group hits by the
+    // repo defining the imported component, pack the dominant group, and
+    // surface the rest as repack hints.
+    let mut grouped: HashMap<String, Vec<ImpactHit>> = HashMap::new();
+    for hit in all_hits {
+        let key = crate::definition::defining_repo_name(&hit, &repos).to_string();
+        grouped.entry(key).or_default().push(hit);
+    }
+    let mut groups: Vec<(String, Vec<ImpactHit>)> = grouped.into_iter().collect();
+    groups.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
+    let hits = if groups.is_empty() {
+        Vec::new()
+    } else {
+        groups.remove(0).1
+    };
+    let same_name: Vec<SameNameGroup> = groups
+        .into_iter()
+        .map(|(repo, group)| {
+            let mut sources: HashMap<&String, usize> = HashMap::new();
+            for hit in &group {
+                *sources.entry(&hit.source).or_default() += 1;
+            }
+            let mut ranked: Vec<(&String, usize)> = sources.into_iter().collect();
+            ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+            SameNameGroup {
+                repo,
+                sites: group.len(),
+                from_hint: ranked[0].0.clone(),
+            }
+        })
+        .collect();
 
     let mut prop_counts: HashMap<&String, usize> = HashMap::new();
     for hit in &hits {
@@ -82,6 +126,7 @@ pub fn build_context(
         prop_counts,
         definition,
         excerpts,
+        same_name,
     })
 }
 
@@ -186,6 +231,34 @@ mod tests {
 
     fn workspace() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/workspace")
+    }
+
+    #[test]
+    fn same_name_components_are_split_out_not_mixed_in() {
+        let mut warnings = Vec::new();
+        // fixture collision: app-one + app-two import Button from fake-lib,
+        // app-two/src/special.tsx imports a LOCAL Button from ./local-button
+        let pack = build_context(&workspace(), "Button", None, 8, &mut warnings).unwrap();
+        // pack stats cover only the dominant (fake-lib) component
+        assert!(
+            pack.excerpts.iter().all(|e| !e.file.ends_with("special.tsx")),
+            "local-Button site must not appear among fake-lib excerpts"
+        );
+        assert_eq!(pack.same_name.len(), 1);
+        assert_eq!(pack.same_name[0].repo, "app-two");
+        assert_eq!(pack.same_name[0].sites, 1);
+        assert!(pack.same_name[0].from_hint.contains("local-button"));
+        // repacking with the hint yields the local component instead
+        let local = build_context(
+            &workspace(),
+            "Button",
+            Some(&pack.same_name[0].from_hint),
+            8,
+            &mut warnings,
+        )
+        .unwrap();
+        assert_eq!(local.total_sites, 1);
+        assert!(local.excerpts[0].file.ends_with("special.tsx"));
     }
 
     #[test]

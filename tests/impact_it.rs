@@ -42,7 +42,9 @@ fn from_filter_narrows_by_source() {
     let filtered =
         lxp_scan::impact::run_impact(&workspace(), "Button", Some("fake-lib"), &mut warnings)
             .unwrap();
-    assert_eq!(all.len(), filtered.len()); // all Button imports come from fake-lib
+    // everything except app-two's local Button (src/special.tsx) is from fake-lib
+    assert_eq!(all.len(), filtered.len() + 1);
+    assert!(filtered.iter().all(|h| h.source.contains("fake-lib")));
     let none =
         lxp_scan::impact::run_impact(&workspace(), "Button", Some("no-such-lib"), &mut warnings)
             .unwrap();
@@ -64,7 +66,7 @@ fn alias_and_relative_hits_match_same_from_filter() {
     assert_eq!(hits.len(), 2, "expected alias + relative hits: {hits:?}");
     for hit in &hits {
         assert_eq!(hit.repo, "app-one");
-        assert_eq!(hit.source, "src/utils/helpers.ts");
+        assert_eq!(hit.source, "app-one/src/utils/helpers.ts");
     }
     assert!(hits.iter().any(|h| h.file.ends_with("page.tsx")));
     assert!(hits.iter().any(|h| h.file.ends_with("section.tsx")));

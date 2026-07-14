@@ -40,13 +40,7 @@ pub fn find_definition(
 ) -> Option<Definition> {
     let mut counts: HashMap<&str, usize> = HashMap::new();
     for hit in hits {
-        let first = hit.source.split('/').next().unwrap_or("");
-        let repo_name = if repos.iter().any(|r| r.name == first) {
-            first
-        } else {
-            hit.repo.as_str()
-        };
-        *counts.entry(repo_name).or_default() += 1;
+        *counts.entry(defining_repo_name(hit, repos)).or_default() += 1;
     }
     let mut ranked: Vec<(&str, usize)> = counts.into_iter().collect();
     ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
@@ -114,6 +108,19 @@ pub fn find_definition(
         line: start,
         excerpt,
     })
+}
+
+/// Repo defining the component behind one hit's import: a source whose first
+/// path segment names a workspace repo (package specifiers, and file paths
+/// displayed with a repo prefix) points at that repo; a repo-relative file
+/// path means the import stayed inside the hit's own repo.
+pub fn defining_repo_name<'a>(hit: &'a ImpactHit, repos: &[Repo]) -> &'a str {
+    let first = hit.source.split('/').next().unwrap_or("");
+    if repos.iter().any(|r| r.name == first) {
+        first
+    } else {
+        hit.repo.as_str()
+    }
 }
 
 /// 1-based inclusive line slice, capped at MAX_SECTION_LINES with a marker.

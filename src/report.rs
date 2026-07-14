@@ -114,6 +114,19 @@ pub fn context_markdown(pack: &ContextPack, root_display: &str) -> String {
             excerpt.repo, excerpt.file, excerpt.line, excerpt.code
         ));
     }
+
+    if !pack.same_name.is_empty() {
+        out.push_str(&format!(
+            "\n## Other components named {} (NOT in this pack)\n",
+            pack.symbol
+        ));
+        for group in &pack.same_name {
+            out.push_str(&format!(
+                "- {} — {} site(s) · repack with `--from \"{}\"`\n",
+                group.repo, group.sites, group.from_hint
+            ));
+        }
+    }
     out
 }
 

@@ -136,15 +136,27 @@ impl RepoResolver {
         ResolvedImport::Package(specifier.to_string())
     }
 
-    /// Display: packages verbatim; files as repo-relative paths.
+    /// Display: packages verbatim; files as repo-name-prefixed repo-relative
+    /// paths (`lxp-web/src/components/X/index.tsx`). The prefix keeps sources
+    /// unambiguous across repos — two repos routinely contain identically
+    /// shaped local paths — and makes the display independent of whether
+    /// `--root` was given relative or absolute (a bare relative root used to
+    /// fail the strip and leak a prefixed path by accident).
     pub fn display(&self, resolved: &ResolvedImport) -> String {
         match resolved {
             ResolvedImport::Package(name) => name.clone(),
-            ResolvedImport::File(path) => path
-                .strip_prefix(&self.repo_root)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .into_owned(),
+            ResolvedImport::File(path) => {
+                let stripped = path
+                    .strip_prefix(&self.repo_root)
+                    .or_else(|_| path.strip_prefix(normalize(&self.repo_root)))
+                    .ok();
+                match (stripped, self.repo_root.file_name()) {
+                    (Some(rel), Some(repo)) => {
+                        Path::new(repo).join(rel).to_string_lossy().into_owned()
+                    }
+                    _ => path.to_string_lossy().into_owned(),
+                }
+            }
         }
     }
 }
@@ -241,11 +253,14 @@ mod tests {
     }
 
     #[test]
-    fn display_is_repo_relative_for_files_and_verbatim_for_packages() {
+    fn display_is_repo_prefixed_for_files_and_verbatim_for_packages() {
         let resolver = resolver();
         let importer = fixture("app-one").join("src/page.tsx");
         let file = resolver.resolve(&importer, "utils/helpers");
-        assert_eq!(resolver.display(&file), "src/utils/helpers.ts");
+        // repo prefix keeps same-shaped paths in different repos distinguishable
+        // (two repos both having src/components/X/index.tsx is common), so a
+        // --from hint can never match the wrong repo
+        assert_eq!(resolver.display(&file), "app-one/src/utils/helpers.ts");
         let package = ResolvedImport::Package("fake-lib/components/Button".to_string());
         assert_eq!(resolver.display(&package), "fake-lib/components/Button");
     }

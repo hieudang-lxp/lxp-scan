@@ -46,7 +46,7 @@ One header per repo, two lines per usage site:
 | `file:line` | Import statement location, relative to the repo |
 | `ref ×N` | Uses as a value/function/type (excludes JSX tags) |
 | `jsx ×N` | Times rendered as `<Symbol ...>` |
-| `from` | Resolved import source — packages verbatim; intra-repo files as repo-relative paths (alias and relative imports of the same file display identically) |
+| `from` | Resolved import source — packages verbatim; intra-repo files prefixed with the repo name, e.g. `lxp-web/src/...` (alias and relative imports of the same file display identically) |
 | `props` | Union of props passed across all renders in the file |
 
 ## Context packs for LLM agents
@@ -66,8 +66,11 @@ Prints a markdown pack on stdout, ready to paste into a task brief:
   anchored at the JSX render line (not the import), round-robined across
   repos, preferring unseen prop combinations
 
-The defining repo is inferred from where the imports point; when several
-files declare the same name the shallowest path wins and a warning names the
+Same-name components never blend into one pack: hits are grouped by the repo
+defining the imported component, the pack covers the dominant group, and an
+"Other components named X" section lists the rest with a ready-to-paste
+`--from` hint to repack them. Within the defining repo, when several files
+declare the same name the shallowest path wins and a warning names the
 alternatives (`--verbose`). `--json` emits the full pack as JSON.
 
 ## Recipes
