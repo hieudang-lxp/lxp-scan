@@ -29,6 +29,9 @@ pub struct FileFindings {
     pub jsx_uses: usize,
     /// union of prop names across JSX uses
     pub jsx_props: BTreeSet<String>,
+    /// 1-based line of each `jsx_uses` occurrence, in source order — lets
+    /// consumers excerpt the render site instead of the import line
+    pub jsx_lines: Vec<usize>,
 }
 
 /// One FileFindings per matching import of `symbol` (named import matching the
@@ -97,11 +100,7 @@ pub fn analyze_file(
                 // Namespace imports (`import * as X`) are skipped: v1 limitation.
                 _ => continue,
             };
-            let line = source_text[..decl.span.start as usize]
-                .bytes()
-                .filter(|b| *b == b'\n')
-                .count()
-                + 1;
+            let line = line_of(source_text, decl.span.start);
             matches.push((local.to_string(), decl.source.value.to_string(), line));
         }
     }
@@ -115,6 +114,7 @@ pub fn analyze_file(
                 refs: 0,
                 jsx_uses: 0,
                 jsx_props: BTreeSet::new(),
+                jsx_spans: Vec::new(),
             };
             collector.visit_program(&ret.program);
             FileFindings {
@@ -123,10 +123,97 @@ pub fn analyze_file(
                 refs: collector.refs,
                 jsx_uses: collector.jsx_uses,
                 jsx_props: collector.jsx_props,
+                jsx_lines: collector
+                    .jsx_spans
+                    .iter()
+                    .map(|offset| line_of(source_text, *offset))
+                    .collect(),
             }
         })
         .collect();
     Ok(findings)
+}
+
+/// Finds the top-level declaration of `name` in one file: `const/function/
+/// class/interface/type/enum`, plain or behind `export`/`export default`.
+/// Re-exports (`export * from`, `export { X } from`) and imports do NOT count —
+/// scanning a repo with this therefore lands on the real definition, not
+/// barrel files. Returns 1-based (start_line, end_line) of the declaration
+/// statement (including the `export` keyword when present).
+pub fn find_declaration(
+    path: &Path,
+    source_text: &str,
+    name: &str,
+) -> anyhow::Result<Option<(usize, usize)>> {
+    use oxc_ast::ast::{Declaration, ExportDefaultDeclarationKind};
+    use oxc_span::GetSpan;
+
+    let allocator = Allocator::default();
+    let mut source_type = SourceType::from_path(path)
+        .map_err(|e| anyhow!("unsupported source type for {}: {e}", path.display()))?;
+    if path.extension().and_then(|e| e.to_str()) == Some("js") {
+        source_type = source_type.with_jsx(true);
+    }
+    let ret = Parser::new(&allocator, source_text, source_type).parse();
+    if ret.panicked || (ret.diagnostics.has_errors() && ret.program.body.is_empty()) {
+        bail!(
+            "failed to parse {}: {} parser diagnostic(s)",
+            path.display(),
+            ret.diagnostics.len()
+        );
+    }
+
+    fn declares(decl: &Declaration, name: &str) -> bool {
+        match decl {
+            Declaration::VariableDeclaration(v) => v
+                .declarations
+                .iter()
+                .any(|d| d.id.get_identifier_name().is_some_and(|n| n == name)),
+            Declaration::FunctionDeclaration(f) => {
+                f.id.as_ref().is_some_and(|id| id.name.as_str() == name)
+            }
+            Declaration::ClassDeclaration(c) => {
+                c.id.as_ref().is_some_and(|id| id.name.as_str() == name)
+            }
+            Declaration::TSInterfaceDeclaration(i) => i.id.name.as_str() == name,
+            Declaration::TSTypeAliasDeclaration(t) => t.id.name.as_str() == name,
+            Declaration::TSEnumDeclaration(e) => e.id.name.as_str() == name,
+            _ => false,
+        }
+    }
+
+    for stmt in &ret.program.body {
+        let span = match stmt {
+            Statement::ExportNamedDeclaration(e) => match &e.declaration {
+                Some(decl) if declares(decl, name) => Some(e.span),
+                _ => None,
+            },
+            Statement::ExportDefaultDeclaration(e) => match &e.declaration {
+                ExportDefaultDeclarationKind::FunctionDeclaration(f)
+                    if f.id.as_ref().is_some_and(|id| id.name.as_str() == name) =>
+                {
+                    Some(e.span)
+                }
+                ExportDefaultDeclarationKind::ClassDeclaration(c)
+                    if c.id.as_ref().is_some_and(|id| id.name.as_str() == name) =>
+                {
+                    Some(e.span)
+                }
+                _ => None,
+            },
+            other => match other.as_declaration() {
+                Some(decl) if declares(decl, name) => Some(decl.span()),
+                _ => None,
+            },
+        };
+        if let Some(span) = span {
+            return Ok(Some((
+                line_of(source_text, span.start),
+                line_of(source_text, span.end),
+            )));
+        }
+    }
+    Ok(None)
 }
 
 /// Counts usages of one local binding.
@@ -155,6 +242,17 @@ struct UsageCollector<'s> {
     refs: usize,
     jsx_uses: usize,
     jsx_props: BTreeSet<String>,
+    /// byte offset of each plain-tag JSX use; converted to lines by the caller
+    jsx_spans: Vec<u32>,
+}
+
+/// 1-based line number of a byte offset.
+fn line_of(source_text: &str, offset: u32) -> usize {
+    source_text[..offset as usize]
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count()
+        + 1
 }
 
 impl<'a> Visit<'a> for UsageCollector<'_> {
@@ -175,6 +273,7 @@ impl<'a> Visit<'a> for UsageCollector<'_> {
             // `JSXElementName::Identifier` variant and can never be a binding.)
             JSXElementName::IdentifierReference(id) if id.name.as_str() == self.local => {
                 self.jsx_uses += 1;
+                self.jsx_spans.push(it.span.start);
                 for attr in &it.attributes {
                     if let JSXAttributeItem::Attribute(attribute) = attr
                         && let JSXAttributeName::Identifier(name) = &attribute.name
@@ -305,6 +404,32 @@ Whole()
     }
 
     #[test]
+    fn jsx_use_line_numbers_are_recorded_in_order() {
+        let src = r#"
+import { Button } from 'lib'
+const pad = 1
+export const P = () => (
+  <Button a />
+)
+export const Q = () => <Button b />
+"#;
+        let findings = analyze_file(&tsx("lines"), src, "Button").unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].jsx_lines, vec![5, 7]);
+    }
+
+    #[test]
+    fn member_expression_and_ref_only_uses_record_no_jsx_lines() {
+        let src = r#"
+import { Button } from 'lib'
+const wrapped = Button
+export const P = () => <Button.Icon />
+"#;
+        let findings = analyze_file(&tsx("nolines"), src, "Button").unwrap();
+        assert!(findings[0].jsx_lines.is_empty());
+    }
+
+    #[test]
     fn unrelated_symbol_with_same_substring_is_not_matched() {
         let src = r#"
 import { ButtonGroup } from 'fake-lib/components/ButtonGroup'
@@ -329,5 +454,44 @@ console.log(Button)
         let src = "import { from 'nope";
         let result = analyze_file(&tsx("broken"), src, "Button");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn find_declaration_locates_exported_const_and_interface() {
+        let src = r#"
+export interface ButtonProps {
+  variant?: 'primary' | 'ghost'
+  disabled?: boolean
+}
+
+export const Button = ({ variant, disabled }: ButtonProps) => {
+  return null
+}
+"#;
+        let decl = find_declaration(&tsx("def"), src, "Button").unwrap();
+        assert_eq!(decl, Some((7, 9)));
+        let props = find_declaration(&tsx("def"), src, "ButtonProps").unwrap();
+        assert_eq!(props, Some((2, 5)));
+    }
+
+    #[test]
+    fn find_declaration_matches_function_and_default_export_forms() {
+        let src = "export default function Button() {\n  return null\n}\n";
+        let decl = find_declaration(&tsx("deffn"), src, "Button").unwrap();
+        assert_eq!(decl, Some((1, 3)));
+        let src2 = "function Card() {\n  return null\n}\nexport { Card }\n";
+        let decl2 = find_declaration(&tsx("plainfn"), src2, "Card").unwrap();
+        assert_eq!(decl2, Some((1, 3)));
+    }
+
+    #[test]
+    fn reexports_and_imports_are_not_declarations() {
+        let src = r#"
+import { Button } from './inner'
+export * from './Button'
+export { Button as default } from './Button'
+"#;
+        let decl = find_declaration(&tsx("reexport"), src, "Button").unwrap();
+        assert_eq!(decl, None);
     }
 }

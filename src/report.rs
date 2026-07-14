@@ -1,3 +1,4 @@
+use crate::context::ContextPack;
 use crate::drift::{DriftLevel, DriftRow};
 use crate::impact::ImpactHit;
 use anyhow::Result;
@@ -68,6 +69,50 @@ pub fn impact_report(hits: &[ImpactHit]) -> String {
             parts.push(format!("props: {}", props.join(", ")));
         }
         out.push_str(&format!("      {}\n", parts.join(" · ")));
+    }
+    out
+}
+
+pub fn context_json(pack: &ContextPack) -> Result<String> {
+    Ok(serde_json::to_string_pretty(pack)?)
+}
+
+/// LLM-ready markdown pack: definition, prop frequencies, usage excerpts.
+pub fn context_markdown(pack: &ContextPack, root_display: &str) -> String {
+    let mut out = format!(
+        "# Context: {}\n\nScanned {root_display} · {} sites · {} files · {} repos\n",
+        pack.symbol, pack.total_sites, pack.total_files, pack.total_repos
+    );
+
+    out.push_str("\n## Definition\n");
+    match &pack.definition {
+        Some(def) => {
+            out.push_str(&format!("{}/{}:{}\n```tsx\n{}```\n", def.repo, def.file, def.line, def.excerpt));
+        }
+        None => out.push_str("not located (no top-level declaration found in the workspace)\n"),
+    }
+
+    if !pack.prop_counts.is_empty() {
+        out.push_str("\n## Props observed across usages\n");
+        let freq: Vec<String> = pack
+            .prop_counts
+            .iter()
+            .map(|(prop, count)| format!("{prop} ×{count}"))
+            .collect();
+        out.push_str(&freq.join(" · "));
+        out.push('\n');
+    }
+
+    out.push_str(&format!(
+        "\n## Usage excerpts ({} of {} sites)\n",
+        pack.excerpts.len(),
+        pack.total_sites
+    ));
+    for excerpt in &pack.excerpts {
+        out.push_str(&format!(
+            "### {} · {}:{}\n```tsx\n{}\n```\n",
+            excerpt.repo, excerpt.file, excerpt.line, excerpt.code
+        ));
     }
     out
 }
@@ -149,6 +194,7 @@ mod tests {
                 refs: 0,
                 jsx_uses: 1,
                 jsx_props: ["variant", "size"].iter().map(|s| s.to_string()).collect(),
+                jsx_lines: vec![1],
             },
             ImpactHit {
                 repo: "app-one".to_string(),
@@ -158,6 +204,7 @@ mod tests {
                 refs: 2,
                 jsx_uses: 0,
                 jsx_props: Default::default(),
+                jsx_lines: Vec::new(),
             },
             ImpactHit {
                 repo: "app-two".to_string(),
@@ -167,6 +214,7 @@ mod tests {
                 refs: 0,
                 jsx_uses: 0,
                 jsx_props: Default::default(),
+                jsx_lines: Vec::new(),
             },
         ]
     }

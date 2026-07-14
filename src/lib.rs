@@ -1,4 +1,6 @@
 pub mod analyzer;
+pub mod context;
+pub mod definition;
 pub mod discover;
 pub mod drift;
 pub mod impact;

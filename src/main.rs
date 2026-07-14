@@ -24,6 +24,22 @@ enum Cmd {
         #[arg(long)]
         verbose: bool,
     },
+    /// Emit an LLM-ready context pack for a symbol (definition + usage excerpts)
+    Context {
+        symbol: String,
+        /// Substring filter on the resolved import source
+        #[arg(long)]
+        from: Option<String>,
+        /// Maximum number of usage excerpts
+        #[arg(long, default_value_t = 8)]
+        sites: usize,
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        verbose: bool,
+    },
     /// Show lxp-common-* / lxp-design-system version drift across repos
     Drift {
         #[arg(long, default_value = ".")]
@@ -45,6 +61,14 @@ fn main() -> ExitCode {
             json,
             verbose,
         } => run_impact(&root, &symbol, from.as_deref(), json, verbose),
+        Cmd::Context {
+            symbol,
+            from,
+            sites,
+            root,
+            json,
+            verbose,
+        } => run_context(&root, &symbol, from.as_deref(), sites, json, verbose),
         Cmd::Drift {
             root,
             json,
@@ -123,6 +147,34 @@ fn run_impact(
             repos.len()
         );
         if hits.is_empty() {
+            eprintln!(
+                "hint: no matches under {} — check --root, drop/adjust --from, or add --verbose",
+                root.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn run_context(
+    root: &std::path::Path,
+    symbol: &str,
+    from: Option<&str>,
+    sites: usize,
+    json: bool,
+    verbose: bool,
+) -> anyhow::Result<()> {
+    let mut warnings = Vec::new();
+    let pack = lxp_scan::context::build_context(root, symbol, from, sites, &mut warnings)?;
+    report_warnings(&warnings, verbose);
+    if json {
+        println!("{}", lxp_scan::report::context_json(&pack)?);
+    } else {
+        print!(
+            "{}",
+            lxp_scan::report::context_markdown(&pack, &root.display().to_string())
+        );
+        if pack.total_sites == 0 {
             eprintln!(
                 "hint: no matches under {} — check --root, drop/adjust --from, or add --verbose",
                 root.display()

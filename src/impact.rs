@@ -16,6 +16,8 @@ pub struct ImpactHit {
     pub refs: usize,
     pub jsx_uses: usize,
     pub jsx_props: BTreeSet<String>,
+    /// 1-based line of each JSX render site (the import line is `line`)
+    pub jsx_lines: Vec<usize>,
 }
 
 /// Scans every discovered repo under `root` for imports of `symbol`.
@@ -92,6 +94,7 @@ fn scan_file(
                 refs: f.refs,
                 jsx_uses: f.jsx_uses,
                 jsx_props: f.jsx_props,
+                jsx_lines: f.jsx_lines,
             })
         })
         .collect();

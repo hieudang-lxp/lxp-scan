@@ -37,7 +37,9 @@ main.rs (clap dispatch, exit codes, stdout=data / stderr=warnings+summary)
 | `resolver` | Per-repo tsconfig (JSONC-tolerant): `baseUrl` + `paths` aliases. Canonicalizes alias and relative specifiers to the same absolute file path (lexical normalize + extension probing), so both forms compare and filter identically. Exact (star-less) patterns match on full equality only; longest prefix wins |
 | `analyzer` | One-file oxc AST pass: find imports of the symbol (named imports match the *source* name incl. `as` renames; default imports match the local name), then count identifier refs, JSX uses, and collect JSX prop names for the local binding |
 | `impact` | Orchestration: parallel scan, `--from` filter on the *resolved* source, warning aggregation, deterministic sort |
-| `report` | Table (TTY: minimal borders, dynamic width, colored drift levels) and JSON rendering |
+| `definition` | Finds the real declaration behind the hits' imports: dominant defining repo from resolved sources (package/prefixed source → that repo; repo-relative source → the hit's own repo), then a parallel `find_declaration` scan — re-exports never match, so barrels are skipped. Excerpts `XxxProps`/`IXxxProps` + the declaration, 30 lines each |
+| `context` | Builds the LLM pack: impact scan + per-prop site counts + definition + representative usage excerpts (round-robin across repos, JSX-first, unseen prop-sets preferred), anchored at the first JSX render line |
+| `report` | impact: grouped-by-repo text; context: markdown pack; drift: table (TTY: minimal borders, colored levels); JSON for all three |
 
 ## Key decisions
 
@@ -96,5 +98,5 @@ main.rs (clap dispatch, exit codes, stdout=data / stderr=warnings+summary)
 
 ## Roadmap
 
-- Phase 2: `context <symbol>` — emit an LLM-ready context pack (definition +
-  usage excerpts) built on the `impact` machinery.
+- ~~Phase 2: `context <symbol>`~~ — shipped (see `definition` + `context`
+  modules above).
