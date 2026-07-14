@@ -4,7 +4,7 @@
 # execs the stdio server. Claude Code runs this via the plugin's MCP config.
 set -euo pipefail
 
-VERSION="v0.1.0"
+VERSION="v0.2.0"
 REPO="hieudang-lxp/lxp-scan"
 CACHE_DIR="${HOME}/.cache/lxp-scan"
 BIN="${CACHE_DIR}/lxp-scan-${VERSION}"
@@ -20,6 +20,18 @@ if [ ! -x "$BIN" ]; then
     "https://github.com/${REPO}/releases/download/${VERSION}/lxp-scan-darwin-arm64"
   chmod +x "${BIN}.tmp"
   mv "${BIN}.tmp" "$BIN"
+fi
+
+# Convenience: expose the cached binary as `lxp-scan` on PATH so the CLI
+# (incl. `lxp-scan tui`) works too. Update only links we created (they point
+# into our cache dir); never clobber a dev install or anything else.
+LINK="${HOME}/.local/bin/lxp-scan"
+link_target="$(readlink "$LINK" 2>/dev/null || true)"
+if [ ! -e "$LINK" ] && [ -z "$link_target" ]; then
+  mkdir -p "${HOME}/.local/bin"
+  ln -s "$BIN" "$LINK"
+elif [ -n "$link_target" ] && [ "${link_target#"${CACHE_DIR}"/}" != "$link_target" ]; then
+  ln -sf "$BIN" "$LINK"
 fi
 
 # Workspace root = the directory whose children are the FE repos.

@@ -150,7 +150,9 @@ claude plugin install lxp-scan@lxp-tools
 This gives Claude Code the four commands as MCP tools (`impact`, `context`,
 `drift`, `dupes`) plus a skill teaching the agent when to use them. On first
 use the plugin downloads the darwin-arm64 binary from GitHub Releases
-(cached in `~/.cache/lxp-scan`); Intel Macs / Linux build from source.
+(cached in `~/.cache/lxp-scan`) and links it to `~/.local/bin/lxp-scan`, so
+the full CLI — including `lxp-scan tui` — works from any terminal too.
+Intel Macs / Linux build from source.
 
 **Workspace root detection:** when Claude Code runs inside a repo (a dir
 with `package.json`), the parent directory is scanned — so all sibling FE
