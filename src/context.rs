@@ -99,10 +99,11 @@ fn select_sites(hits: &[ImpactHit], sites: usize) -> Vec<&ImpactHit> {
         queues[idx].push_back(hit);
     }
     for queue in &mut queues {
-        // stable: keeps (file, line) order within each preference class
+        // stable: keeps (file, line) order within each preference class;
+        // test files are noise in a context pack, so they go last
         queue
             .make_contiguous()
-            .sort_by_key(|h| if h.jsx_uses > 0 { 0 } else { 1 });
+            .sort_by_key(|h| (is_test_file(&h.file), if h.jsx_uses > 0 { 0 } else { 1 }));
     }
 
     let mut seen_props: HashSet<String> = HashSet::new();
@@ -114,7 +115,11 @@ fn select_sites(hits: &[ImpactHit], sites: usize) -> Vec<&ImpactHit> {
             }
             let Some(idx) = queue
                 .iter()
-                .position(|h| h.jsx_uses > 0 && !seen_props.contains(&props_key(h)))
+                .position(|h| {
+                    !is_test_file(&h.file)
+                        && h.jsx_uses > 0
+                        && !seen_props.contains(&props_key(h))
+                })
                 .or(if queue.is_empty() { None } else { Some(0) })
             else {
                 continue;
@@ -125,6 +130,13 @@ fn select_sites(hits: &[ImpactHit], sites: usize) -> Vec<&ImpactHit> {
         }
     }
     selected
+}
+
+fn is_test_file(file: &str) -> bool {
+    file.contains("__test__")
+        || file.contains("__tests__")
+        || file.contains(".test.")
+        || file.contains(".spec.")
 }
 
 fn props_key(hit: &ImpactHit) -> String {
@@ -200,6 +212,33 @@ mod tests {
         assert!(page.code.starts_with("  <Button"), "got: {}", page.code);
         assert!(page.code.contains("variant=\"primary\""));
         assert!(page.line > 1, "anchor must be the JSX line, not the import");
+    }
+
+    fn hit(repo: &str, file: &str, jsx_uses: usize) -> ImpactHit {
+        ImpactHit {
+            repo: repo.to_string(),
+            file: file.to_string(),
+            line: 1,
+            source: "lib".to_string(),
+            refs: 0,
+            jsx_uses,
+            jsx_props: Default::default(),
+            jsx_lines: if jsx_uses > 0 { vec![1] } else { vec![] },
+        }
+    }
+
+    #[test]
+    fn test_files_are_selected_last() {
+        let hits = vec![
+            hit("app", "src/__test__/Thing.test.tsx", 1),
+            hit("app", "src/Thing.spec.tsx", 1),
+            hit("app", "src/pages/Real.tsx", 1),
+        ];
+        let selected = select_sites(&hits, 1);
+        assert_eq!(selected[0].file, "src/pages/Real.tsx");
+        // test files still appear once real sites are exhausted
+        let all = select_sites(&hits, 3);
+        assert_eq!(all.len(), 3);
     }
 
     #[test]
