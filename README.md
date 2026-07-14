@@ -114,16 +114,31 @@ ConfirmPopup — 2 repos
   lxp-web · src/components/ConfirmPopup/index.tsx:41
 ```
 
-## MCP server for Claude Code
+## Claude Code plugin (team install)
+
+No Rust toolchain needed — two commands:
+
+```bash
+claude plugin marketplace add hieudang-lxp/lxp-scan
+claude plugin install lxp-scan@lxp-tools
+```
+
+This gives Claude Code the four commands as MCP tools (`impact`, `context`,
+`drift`, `dupes`) plus a skill teaching the agent when to use them. On first
+use the plugin downloads the darwin-arm64 binary from GitHub Releases
+(cached in `~/.cache/lxp-scan`); Intel Macs / Linux build from source.
+
+**Workspace root detection:** when Claude Code runs inside a repo (a dir
+with `package.json`), the parent directory is scanned — so all sibling FE
+repos are visible. Running elsewhere scans the current directory. Override
+with `export LXP_SCAN_ROOT=/path/to/your/fe-workspace` in your shell profile
+if your layout differs.
+
+**Manual registration** (without the plugin, e.g. for a locally built binary):
 
 ```bash
 claude mcp add --scope user lxp-scan -- ~/.local/bin/lxp-scan mcp --root ~/Leapxpert/FE
 ```
-
-Runs a stdio MCP server exposing `impact`, `context`, `drift`, and `dupes` as
-tools, so Claude Code pulls cross-repo ground truth itself instead of
-guessing. The root is fixed at registration time; tool arguments mirror the
-CLI flags (`symbol`, `from`, `sites`).
 
 ## Flags
 
