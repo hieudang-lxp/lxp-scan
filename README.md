@@ -6,6 +6,7 @@ Cross-repo intelligence CLI for the LeapXpert FE tree:
 - **`context`** — LLM-ready context pack for a symbol: definition + usage excerpts
 - **`dupes`** — same-name components implemented independently in multiple repos
 - **`drift`** — which repos are on diverging versions of `lxp-common-*` packages?
+- **`tui`** — interactive component explorer: fuzzy-find, browse usages, jump to editor
 - **`mcp`** — stdio MCP server exposing all of the above to coding agents
 
 AST-based (oxc), tsconfig-alias-aware, parallel. Scans ~4,400 files in ~1s.
@@ -97,6 +98,29 @@ lxp-scan impact Button --from lxp-common-components-js --root ~/Leapxpert/FE --j
 
 Suspect missing results? Add `--verbose` to see per-file warnings; without it
 only a `N warning(s) suppressed` notice is printed.
+
+## Interactive TUI
+
+```bash
+lxp-scan tui --root ~/Leapxpert/FE
+```
+
+Full-screen component explorer over every exported component in the
+workspace. Type to fuzzy-filter the list; selecting a symbol runs the
+context scan in the background (cached per symbol) and shows totals, prop
+frequencies, the current usage excerpt, and the definition — all
+syntax-highlighted.
+
+| Key | Action |
+|---|---|
+| type / Backspace | fuzzy-filter the component list |
+| ↑ / ↓ | select a component |
+| Tab / Shift-Tab | cycle usage excerpts |
+| Enter | open the shown site in `$EDITOR` (`+line`), or `code -g` |
+| Esc | clear the filter, or quit when it's empty |
+
+`context` excerpts on a TTY are also syntax-highlighted (bat-style); piped
+output stays plain so packs paste cleanly into task briefs.
 
 ## Duplicate components
 

@@ -54,6 +54,12 @@ enum Cmd {
         #[arg(long)]
         verbose: bool,
     },
+    /// Interactive component explorer: fuzzy-find a symbol, browse its
+    /// usages/props/definition, Enter opens the site in your editor
+    Tui {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+    },
     /// Show lxp-common-* / lxp-design-system version drift across repos
     Drift {
         #[arg(long, default_value = ".")]
@@ -84,6 +90,7 @@ fn main() -> ExitCode {
             verbose,
         } => run_context(&root, &symbol, from.as_deref(), sites, json, verbose),
         Cmd::Mcp { root } => lxp_scan::mcp::serve(&root),
+        Cmd::Tui { root } => lxp_scan::tui::run(&root),
         Cmd::Dupes {
             root,
             json,

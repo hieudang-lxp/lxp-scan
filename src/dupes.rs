@@ -23,12 +23,14 @@ pub struct DupeGroup {
     pub repo_count: usize,
 }
 
-/// Same-name exported values declared in more than one repo — candidates for
-/// consolidation into lxp-common. Only component-shaped names (leading
-/// uppercase) are reported: lowercase utils dupe too, but the uppercase set
-/// is where two teams ship parallel implementations of the same UI.
-/// Names ending in `Props` are excluded (conventional per-component types).
-pub fn find_dupes(root: &Path, warnings: &mut Vec<String>) -> anyhow::Result<Vec<DupeGroup>> {
+/// Every component-shaped exported declaration in the workspace, keyed by
+/// name. Only leading-uppercase names are kept: lowercase utils matter less
+/// for UI work, and `*Props` types are conventional per-component noise.
+/// Shared by `dupes` (repo_count >= 2 filter) and the TUI symbol list.
+pub fn scan_exports(
+    root: &Path,
+    warnings: &mut Vec<String>,
+) -> anyhow::Result<BTreeMap<String, Vec<DeclSite>>> {
     let repos = discover::discover_repos(root, warnings)?;
     let mut by_name: BTreeMap<String, Vec<DeclSite>> = BTreeMap::new();
     for repo in &repos {
@@ -81,8 +83,13 @@ pub fn find_dupes(root: &Path, warnings: &mut Vec<String>) -> anyhow::Result<Vec
             }
         }
     }
+    Ok(by_name)
+}
 
-    let mut groups: Vec<DupeGroup> = by_name
+/// Same-name exported values declared in more than one repo — candidates for
+/// consolidation into lxp-common.
+pub fn find_dupes(root: &Path, warnings: &mut Vec<String>) -> anyhow::Result<Vec<DupeGroup>> {
+    let mut groups: Vec<DupeGroup> = scan_exports(root, warnings)?
         .into_iter()
         .filter_map(|(name, mut sites)| {
             sites.sort_by(|a, b| (&a.repo, &a.file, a.line).cmp(&(&b.repo, &b.file, b.line)));

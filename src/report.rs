@@ -98,6 +98,16 @@ pub fn context_json(pack: &ContextPack) -> Result<String> {
     Ok(serde_json::to_string_pretty(pack)?)
 }
 
+/// TTY gets bat-style highlighted excerpts; piped output stays plain so the
+/// pack can be pasted into a task brief unchanged.
+fn maybe_highlight(code: &str) -> String {
+    if std::io::stdout().is_terminal() {
+        crate::highlight::highlight_ansi(code)
+    } else {
+        code.to_string()
+    }
+}
+
 /// LLM-ready markdown pack: definition, prop frequencies, usage excerpts.
 pub fn context_markdown(pack: &ContextPack, root_display: &str) -> String {
     let mut out = format!(
@@ -108,7 +118,13 @@ pub fn context_markdown(pack: &ContextPack, root_display: &str) -> String {
     out.push_str("\n## Definition\n");
     match &pack.definition {
         Some(def) => {
-            out.push_str(&format!("{}/{}:{}\n```tsx\n{}```\n", def.repo, def.file, def.line, def.excerpt));
+            out.push_str(&format!(
+                "{}/{}:{}\n```tsx\n{}```\n",
+                def.repo,
+                def.file,
+                def.line,
+                maybe_highlight(&def.excerpt)
+            ));
         }
         None => out.push_str("not located (no top-level declaration found in the workspace)\n"),
     }
@@ -132,7 +148,10 @@ pub fn context_markdown(pack: &ContextPack, root_display: &str) -> String {
     for excerpt in &pack.excerpts {
         out.push_str(&format!(
             "### {} · {}:{}\n```tsx\n{}\n```\n",
-            excerpt.repo, excerpt.file, excerpt.line, excerpt.code
+            excerpt.repo,
+            excerpt.file,
+            excerpt.line,
+            maybe_highlight(&excerpt.code)
         ));
     }
 
