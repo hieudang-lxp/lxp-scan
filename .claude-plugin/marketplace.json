@@ -1,0 +1,15 @@
+{
+  "name": "lxp-tools",
+  "description": "Internal LeapXpert FE developer tools for Claude Code.",
+  "owner": {
+    "name": "Hieu Dang",
+    "email": "hieu.dang@leapxpert.com"
+  },
+  "plugins": [
+    {
+      "name": "lxp-scan",
+      "source": "./plugin",
+      "description": "Cross-repo FE intelligence for LeapXpert: impact analysis, LLM context packs, duplicate components, and version drift as MCP tools + a usage skill."
+    }
+  ]
+}

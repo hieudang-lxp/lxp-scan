@@ -39,7 +39,9 @@ main.rs (clap dispatch, exit codes, stdout=data / stderr=warnings+summary)
 | `impact` | Orchestration: parallel scan, `--from` filter on the *resolved* source, warning aggregation, deterministic sort |
 | `definition` | Finds the real declaration behind the hits' imports: dominant defining repo from resolved sources (package/prefixed source → that repo; repo-relative source → the hit's own repo), then a parallel `find_declaration` scan — re-exports never match, so barrels are skipped. Excerpts `XxxProps`/`IXxxProps` + the declaration, 30 lines each |
 | `context` | Builds the LLM pack: impact scan + per-prop site counts + definition + representative usage excerpts (round-robin across repos, JSX-first, unseen prop-sets preferred), anchored at the first JSX render line |
-| `report` | impact: grouped-by-repo text; context: markdown pack; drift: table (TTY: minimal borders, colored levels); JSON for all three |
+| `dupes` | Scans every repo's exported values (`exported_values`: const/function/class behind `export`, incl. named default exports; type-only decls and re-exports excluded) and reports capitalized names (non-`*Props`, non-test/story files) declared in ≥2 repos — consolidation candidates |
+| `mcp` | Minimal MCP stdio server (newline-delimited JSON-RPC 2.0, no SDK dep): initialize / ping / tools/list / tools/call, exposing impact/context/drift/dupes to coding agents. `handle_message` is a pure fn for testability |
+| `report` | impact: grouped-by-repo text; context: markdown pack; dupes: grouped list; drift: table (TTY: minimal borders, colored levels); JSON for all |
 
 ## Key decisions
 
