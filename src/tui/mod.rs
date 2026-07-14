@@ -73,7 +73,8 @@ fn event_loop(
             if let Some(Action::OpenEditor(path, line)) = action
                 && let Err(err) = open_editor(terminal, &path, line)
             {
-                app.status = Some(format!("open failed: {err:#}"));
+                // keep the target visible so the user can open it by hand
+                app.status = Some(format!("{err:#} — {}:{line}", path.display()));
             }
         }
     }
@@ -119,8 +120,7 @@ fn spawn_scan(
 }
 
 /// Terminal editors need the screen: suspend the TUI, run `$EDITOR +line`,
-/// resume. Without $EDITOR fall back to VS Code's `code -g file:line`,
-/// which opens detached.
+/// resume. Without $EDITOR fall back to a GUI editor, which opens detached.
 fn open_editor(terminal: &mut DefaultTerminal, path: &Path, line: usize) -> anyhow::Result<()> {
     match std::env::var("EDITOR") {
         Ok(editor) if !editor.trim().is_empty() => {
@@ -136,14 +136,59 @@ fn open_editor(terminal: &mut DefaultTerminal, path: &Path, line: usize) -> anyh
             *terminal = ratatui::init();
             let status = status.with_context(|| format!("running $EDITOR ({program})"))?;
             anyhow::ensure!(status.success(), "$EDITOR exited with {status}");
+            Ok(())
         }
-        _ => {
-            Command::new("code")
+        _ => open_gui_editor(path, line),
+    }
+}
+
+/// `code`/`cursor` CLIs when installed; otherwise the vscode:// URL scheme
+/// via `open`, which reaches VS Code even when its shell command was never
+/// installed. Only spawn what actually exists — a blind spawn dies with a
+/// bare "os error 2" and no hint.
+fn open_gui_editor(path: &Path, line: usize) -> anyhow::Result<()> {
+    for cli in ["code", "cursor"] {
+        if find_in_path(cli).is_some() {
+            Command::new(cli)
                 .arg("-g")
                 .arg(format!("{}:{line}", path.display()))
                 .spawn()
-                .context("launching `code` (set $EDITOR for a terminal editor)")?;
+                .with_context(|| format!("launching `{cli}`"))?;
+            return Ok(());
         }
     }
-    Ok(())
+    if cfg!(target_os = "macos")
+        && let Some(url) = editor_url(path, line)
+    {
+        let status = Command::new("open").arg(&url).status().context("running `open`")?;
+        anyhow::ensure!(status.success(), "`open {url}` failed");
+        return Ok(());
+    }
+    anyhow::bail!("no editor found — set $EDITOR or install the `code`/`cursor` CLI")
+}
+
+/// file:line URL for whichever VS Code-family app is actually installed —
+/// their URL schemes work even when the shell command was never set up.
+fn editor_url(path: &Path, line: usize) -> Option<String> {
+    let apps = [
+        ("Visual Studio Code.app", "vscode"),
+        ("Cursor.app", "cursor"),
+    ];
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let scheme = apps.iter().find_map(|(app, scheme)| {
+        let in_root = Path::new("/Applications").join(app).exists();
+        let in_home = home
+            .as_ref()
+            .is_some_and(|h| h.join("Applications").join(app).exists());
+        (in_root || in_home).then_some(*scheme)
+    })?;
+    let absolute = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    Some(format!("{scheme}://file{}:{line}", absolute.display()))
+}
+
+fn find_in_path(program: &str) -> Option<PathBuf> {
+    let path_var = std::env::var_os("PATH")?;
+    std::env::split_paths(&path_var)
+        .map(|dir| dir.join(program))
+        .find(|candidate| candidate.is_file())
 }
