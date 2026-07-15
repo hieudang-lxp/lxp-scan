@@ -1,2 +1,2 @@
 import { from 'nope
-// mentions Button so the textual prefilter does not skip this file
+// mentions Button and function so no textual prefilter skips this file

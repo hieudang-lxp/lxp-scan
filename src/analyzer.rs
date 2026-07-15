@@ -318,7 +318,7 @@ struct UsageCollector<'s> {
 }
 
 /// 1-based line number of a byte offset.
-fn line_of(source_text: &str, offset: u32) -> usize {
+pub(crate) fn line_of(source_text: &str, offset: u32) -> usize {
     source_text[..offset as usize]
         .bytes()
         .filter(|b| *b == b'\n')

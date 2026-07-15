@@ -73,7 +73,10 @@ mod tests {
         let repos = discover_repos(&fixture_root(), &mut vec![]).unwrap();
         let names: Vec<_> = repos.iter().map(|r| r.name.as_str()).collect();
         // broken-repo is excluded because its package.json is malformed
-        assert_eq!(names, ["app-one", "app-two", "fake-lib"]);
+        assert_eq!(
+            names,
+            ["app-one", "app-two", "fake-lib", "lxp-common-widgets-js"]
+        );
     }
 
     #[test]

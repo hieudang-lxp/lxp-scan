@@ -54,6 +54,28 @@ enum Cmd {
         #[arg(long)]
         verbose: bool,
     },
+    /// Find name-agnostic structural clones: top-level functions with
+    /// identical normalized bodies across repos, even under different names
+    Clones {
+        /// Minimum normalized body tokens for a candidate to participate
+        #[arg(long, default_value_t = lxp_scan::fingerprint::DEFAULT_MIN_TOKENS)]
+        min_tokens: usize,
+        /// Only report clusters containing this declaration name
+        #[arg(long)]
+        symbol: Option<String>,
+        /// Declaration form to scan (a cluster can mix forms; this filters candidates)
+        #[arg(long, value_enum, default_value_t = lxp_scan::clones::KindFilter::All)]
+        kind: lxp_scan::clones::KindFilter,
+        /// Also report clusters whose members all live in one file
+        #[arg(long)]
+        same_file: bool,
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        verbose: bool,
+    },
     /// Interactive component explorer: fuzzy-find a symbol, browse its
     /// usages/props/definition, Enter opens the site in your editor
     Tui {
@@ -96,6 +118,25 @@ fn main() -> ExitCode {
             json,
             verbose,
         } => run_dupes(&root, json, verbose),
+        Cmd::Clones {
+            min_tokens,
+            symbol,
+            kind,
+            same_file,
+            root,
+            json,
+            verbose,
+        } => run_clones(
+            &root,
+            lxp_scan::clones::CloneOptions {
+                min_tokens,
+                symbol,
+                kind,
+                same_file,
+            },
+            json,
+            verbose,
+        ),
         Cmd::Drift {
             root,
             json,
@@ -227,6 +268,30 @@ fn run_dupes(root: &std::path::Path, json: bool, verbose: bool) -> anyhow::Resul
     Ok(())
 }
 
+fn run_clones(
+    root: &std::path::Path,
+    opts: lxp_scan::clones::CloneOptions,
+    json: bool,
+    verbose: bool,
+) -> anyhow::Result<()> {
+    let mut warnings = Vec::new();
+    let out = lxp_scan::clones::find_clones(root, &opts, &mut warnings)?;
+    report_warnings(&warnings, verbose);
+    if json {
+        println!("{}", lxp_scan::report::clones_json(&out)?);
+    } else {
+        print!("{}", lxp_scan::report::clones_report(&out));
+        eprintln!("\n{} clone cluster(s)", out.clusters.len());
+        if out.clusters.is_empty() {
+            eprintln!(
+                "hint: no clusters under {} — check --root, lower --min-tokens, or add --same-file/--verbose",
+                root.display()
+            );
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,6 +330,40 @@ mod tests {
                 assert!(verbose);
             }
             _ => panic!("expected Impact subcommand"),
+        }
+    }
+
+    #[test]
+    fn clones_parses_flags_and_defaults_the_floor() {
+        let cli = Cli::parse_from([
+            "lxp-scan",
+            "clones",
+            "--symbol",
+            "isEmail",
+            "--kind",
+            "const",
+            "--same-file",
+            "--json",
+        ]);
+        match cli.cmd {
+            Cmd::Clones {
+                min_tokens,
+                symbol,
+                kind,
+                same_file,
+                root,
+                json,
+                verbose,
+            } => {
+                assert_eq!(min_tokens, lxp_scan::fingerprint::DEFAULT_MIN_TOKENS);
+                assert_eq!(symbol.as_deref(), Some("isEmail"));
+                assert_eq!(kind, lxp_scan::clones::KindFilter::Const);
+                assert!(same_file);
+                assert_eq!(root, PathBuf::from("."));
+                assert!(json);
+                assert!(!verbose);
+            }
+            _ => panic!("expected Clones subcommand"),
         }
     }
 

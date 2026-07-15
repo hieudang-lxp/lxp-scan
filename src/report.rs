@@ -1,3 +1,4 @@
+use crate::clones::ClonesOutput;
 use crate::context::ContextPack;
 use crate::drift::{DriftLevel, DriftRow};
 use crate::dupes::DupeGroup;
@@ -92,6 +93,60 @@ pub fn dupes_report(groups: &[DupeGroup]) -> String {
         }
     }
     out
+}
+
+pub fn clones_json(out: &ClonesOutput) -> Result<String> {
+    Ok(serde_json::to_string_pretty(out)?)
+}
+
+/// One block per cluster: numbered header, aligned member lines, `→` notes;
+/// npm blind-spot footer at the end. Same grouped-list family as the impact
+/// and dupes reports.
+pub fn clones_report(out: &ClonesOutput) -> String {
+    let mut s = String::new();
+    for (i, cluster) in out.clusters.iter().enumerate() {
+        if i > 0 {
+            s.push('\n');
+        }
+        s.push_str(&format!(
+            "CLONE CLUSTER #{} — {} members · sig {} · {} tokens\n",
+            i + 1,
+            cluster.members.len(),
+            cluster.sig,
+            cluster.token_count
+        ));
+        let loc = |m: &crate::clones::CloneSite| format!("{} · {}:{}", m.repo, m.file, m.line);
+        let width = cluster
+            .members
+            .iter()
+            .map(|m| loc(m).len())
+            .max()
+            .unwrap_or(0);
+        for m in &cluster.members {
+            let suffix = if m.exported { "" } else { " (not exported)" };
+            s.push_str(&format!("  {:<width$}   {}{}\n", loc(m), m.name, suffix));
+        }
+        if !cluster.literals.is_empty() {
+            s.push_str(&format!(
+                "  → identical body · literals: {}\n",
+                cluster.literals.join(" ")
+            ));
+        }
+        for note in &cluster.notes {
+            s.push_str(&format!("  → {note}\n"));
+        }
+    }
+    if !out.npm_only_packages.is_empty() {
+        if !out.clusters.is_empty() {
+            s.push('\n');
+        }
+        s.push_str(&format!(
+            "note: {} lxp-common-* package(s) are npm-only (not scanned); body-clone detection skipped for them: {}\n",
+            out.npm_only_packages.len(),
+            out.npm_only_packages.join(", ")
+        ));
+    }
+    s
 }
 
 pub fn context_json(pack: &ContextPack) -> Result<String> {
@@ -307,6 +362,111 @@ mod tests {
     #[test]
     fn impact_report_on_no_hits_is_empty() {
         assert_eq!(impact_report(&[]), "");
+    }
+
+    fn sample_clones() -> ClonesOutput {
+        use crate::clones::{CloneCluster, CloneSite};
+        use crate::fingerprint::CandidateKind;
+        ClonesOutput {
+            clusters: vec![CloneCluster {
+                members: vec![
+                    CloneSite {
+                        repo: "app-one".to_string(),
+                        file: "src/utils/validators.ts".to_string(),
+                        line: 3,
+                        name: "isEmail".to_string(),
+                        exported: true,
+                        kind: CandidateKind::Const,
+                        sig: "(email: string)".to_string(),
+                    },
+                    CloneSite {
+                        repo: "app-two".to_string(),
+                        file: "src/utils/check.ts".to_string(),
+                        line: 2,
+                        name: "validateEmail".to_string(),
+                        exported: false,
+                        kind: CandidateKind::Fn,
+                        sig: "(value: string)".to_string(),
+                    },
+                ],
+                token_count: 24,
+                sig: "(email: string)".to_string(),
+                literals: vec![r"/^[^\s@]+@[^\s@]+\.[^\s@]+$/".to_string()],
+                notes: vec![
+                    "no isEmail/validateEmail export found in lxp-common-functions-js — candidate shared home"
+                        .to_string(),
+                ],
+            }],
+            npm_only_packages: vec![
+                "lxp-common-components-js".to_string(),
+                "lxp-common-functions-js".to_string(),
+            ],
+        }
+    }
+
+    #[test]
+    fn clones_report_shows_header_aligned_members_literals_and_notes() {
+        let report = clones_report(&sample_clones());
+        let lines: Vec<&str> = report.lines().collect();
+        assert_eq!(
+            lines[0],
+            "CLONE CLUSTER #1 — 2 members · sig (email: string) · 24 tokens"
+        );
+        assert!(report.contains("  app-one · src/utils/validators.ts:3"));
+        assert!(report.contains("isEmail\n"));
+        assert!(
+            report.contains("validateEmail (not exported)"),
+            "unexported members are flagged: {report}"
+        );
+        assert!(report.contains(r"literals: /^[^\s@]+@[^\s@]+\.[^\s@]+$/"));
+        assert!(report.contains("  → no isEmail/validateEmail export found"));
+        assert!(report.contains(
+            "note: 2 lxp-common-* package(s) are npm-only (not scanned); body-clone detection skipped for them: lxp-common-components-js, lxp-common-functions-js"
+        ));
+        // member name column is aligned across the cluster
+        let member_lines: Vec<&str> = lines
+            .iter()
+            .filter(|l| l.contains(" · src/"))
+            .copied()
+            .collect();
+        let name_cols: Vec<usize> = member_lines
+            .iter()
+            .map(|l| {
+                l.find("isEmail")
+                    .or_else(|| l.find("validateEmail"))
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(name_cols[0], name_cols[1], "aligned: {member_lines:?}");
+    }
+
+    #[test]
+    fn clones_report_with_no_clusters_still_prints_the_npm_footer() {
+        let out = ClonesOutput {
+            clusters: vec![],
+            npm_only_packages: vec!["lxp-common-functions-js".to_string()],
+        };
+        let report = clones_report(&out);
+        assert!(report.starts_with("note: 1 lxp-common-* package(s)"));
+    }
+
+    #[test]
+    fn clones_report_on_fully_empty_output_is_empty() {
+        let out = ClonesOutput {
+            clusters: vec![],
+            npm_only_packages: vec![],
+        };
+        assert_eq!(clones_report(&out), "");
+    }
+
+    #[test]
+    fn clones_json_roundtrips() {
+        let json = clones_json(&sample_clones()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["clusters"][0]["members"][0]["name"], "isEmail");
+        assert_eq!(v["clusters"][0]["members"][1]["kind"], "fn");
+        assert_eq!(v["clusters"][0]["token_count"], 24);
+        assert_eq!(v["npm_only_packages"][1], "lxp-common-functions-js");
     }
 
     #[test]

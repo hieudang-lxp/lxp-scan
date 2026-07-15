@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 use std::path::Path;
 
-use crate::{context, drift, dupes, impact, report};
+use crate::{clones, context, drift, dupes, impact, report};
 
 /// Minimal MCP stdio server: newline-delimited JSON-RPC 2.0 on stdin/stdout.
 /// Exposes the scan commands as tools so coding agents (Claude Code) can pull
@@ -96,6 +96,18 @@ fn tool_definitions() -> Value {
             "description": "List same-name exported components declared in more than one repo — parallel implementations that are candidates for consolidation.",
             "inputSchema": { "type": "object", "properties": {} },
         },
+        {
+            "name": "clones",
+            "description": "Find name-agnostic structural clones: top-level functions with identical normalized bodies across repos, even under different names (e.g. isEmail vs validateEmail). Complementary to dupes, which matches names only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "symbol": { "type": "string", "description": "Only clusters containing this declaration name" },
+                    "min_tokens": { "type": "integer", "description": "Minimum normalized body tokens (default 10) — lower to catch one-liners, raise to cut noise" },
+                    "same_file": { "type": "boolean", "description": "Also report clusters whose members live in one file" },
+                },
+            },
+        },
     ])
 }
 
@@ -107,14 +119,15 @@ fn call_tool(root: &Path, params: &Value) -> Value {
     let mut warnings = Vec::new();
 
     let output: anyhow::Result<String> = match (name, symbol) {
-        ("impact", Some(symbol)) => impact::run_impact(root, symbol, from, &mut warnings)
-            .map(|hits| {
+        ("impact", Some(symbol)) => {
+            impact::run_impact(root, symbol, from, &mut warnings).map(|hits| {
                 format!(
                     "{}\n{} usage site(s)\n",
                     report::impact_report(&hits),
                     hits.len()
                 )
-            }),
+            })
+        }
         ("context", Some(symbol)) => {
             let sites = args["sites"].as_u64().unwrap_or(8) as usize;
             context::build_context(root, symbol, from, sites, &mut warnings)
@@ -127,6 +140,23 @@ fn call_tool(root: &Path, params: &Value) -> Value {
         }),
         ("dupes", _) => {
             dupes::find_dupes(root, &mut warnings).map(|groups| report::dupes_report(&groups))
+        }
+        ("clones", _) => {
+            let mut opts = clones::CloneOptions {
+                symbol: args["symbol"].as_str().map(String::from),
+                same_file: args["same_file"].as_bool().unwrap_or(false),
+                ..Default::default()
+            };
+            if let Some(n) = args["min_tokens"].as_u64() {
+                opts.min_tokens = n as usize;
+            }
+            clones::find_clones(root, &opts, &mut warnings).map(|out| {
+                format!(
+                    "{}\n{} clone cluster(s)\n",
+                    report::clones_report(&out),
+                    out.clusters.len()
+                )
+            })
         }
         ("impact" | "context", None) => Err(anyhow::anyhow!("missing required argument: symbol")),
         _ => Err(anyhow::anyhow!("unknown tool: {name}")),
@@ -178,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_exposes_all_four_tools() {
+    fn tools_list_exposes_all_five_tools() {
         let resp = handle_message(&workspace(), &request("tools/list", json!({}))).unwrap();
         let names: Vec<&str> = resp["result"]["tools"]
             .as_array()
@@ -186,7 +216,23 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, vec!["impact", "context", "drift", "dupes"]);
+        assert_eq!(names, vec!["impact", "context", "drift", "dupes", "clones"]);
+    }
+
+    #[test]
+    fn tools_call_clones_returns_cluster_text() {
+        let resp = handle_message(
+            &workspace(),
+            &request(
+                "tools/call",
+                json!({ "name": "clones", "arguments": { "symbol": "validateEmail" } }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(resp["result"]["isError"], false);
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("CLONE CLUSTER #1"), "{text}");
+        assert!(text.contains("isEmail"), "{text}");
     }
 
     #[test]

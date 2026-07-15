@@ -5,7 +5,7 @@ description: Use when working in the LeapXpert FE repos and you need cross-repo 
 
 # lxp-scan — cross-repo FE ground truth
 
-The `lxp-scan` MCP server exposes four tools that scan all LeapXpert FE repos
+The `lxp-scan` MCP server exposes five tools that scan all LeapXpert FE repos
 with AST accuracy (tsconfig-alias-aware, catches renamed and multi-line
 imports that grep misses). Prefer these over grep for cross-repo questions.
 
@@ -16,6 +16,7 @@ imports that grep misses). Prefer these over grep for cross-repo questions.
 | About to change a shared symbol — who breaks? | `impact` | `symbol`, optional `from` |
 | Using/refactoring a component you haven't read | `context` | `symbol`, optional `from`, `sites` |
 | Suspect the same component exists in several repos | `dupes` | — |
+| Suspect a util is reimplemented under different names | `clones` | optional `symbol`, `min_tokens`, `same_file` |
 | Version questions about `lxp-common-*` packages | `drift` | — |
 
 ## Rules
@@ -30,4 +31,10 @@ imports that grep misses). Prefer these over grep for cross-repo questions.
   dynamic `import()`. Zero hits does not prove zero usage for those patterns.
 - The `context` pack's "Props observed across usages" is measured from real
   call sites — trust it over your recollection of the component's API.
+- `clones` finds EXACT structural clones (identical bodies after
+  normalizing identifiers/whitespace; literals kept). A reimplementation
+  with extra guards or a different algorithm will NOT appear — absence of a
+  cluster is not proof a util isn't duplicated in spirit. Its notes
+  cross-check names against npm-only `lxp-common-*` exports; the footer
+  lists packages the scan cannot see into.
 - Cite `repo/file:line` from tool output when reporting findings.

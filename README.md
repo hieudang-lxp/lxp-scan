@@ -5,6 +5,7 @@ Cross-repo intelligence CLI for the LeapXpert FE tree:
 - **`impact`** — where is a symbol imported and used, with which props?
 - **`context`** — LLM-ready context pack for a symbol: definition + usage excerpts
 - **`dupes`** — same-name components implemented independently in multiple repos
+- **`clones`** — same-body functions under *different* names, across repos (name-agnostic)
 - **`drift`** — which repos are on diverging versions of `lxp-common-*` packages?
 - **`tui`** — interactive component explorer: fuzzy-find, browse usages, jump to editor
 - **`mcp`** — stdio MCP server exposing all of the above to coding agents
@@ -138,6 +139,47 @@ ConfirmPopup — 2 repos
   lxp-web · src/components/ConfirmPopup/index.tsx:41
 ```
 
+## Structural clones (name-agnostic)
+
+```bash
+lxp-scan clones --root ~/Leapxpert/FE
+```
+
+`dupes` matches exported component **names**; `clones` matches function
+**bodies**. Every top-level `function f() {}` / `const f = () => {}`
+(exported or not, camelCase utils included) is fingerprinted: identifiers are
+normalized away, comments/whitespace dropped, string/regex/number literals
+kept verbatim — so `isEmail` and `validateEmail` cluster when their bodies
+match, while an email and a phone validator with the same shape but different
+regexes never do.
+
+```
+CLONE CLUSTER #2 — 2 members · sig (email: string) · 20 tokens
+  lxp-app-admin · src/utils/validators.ts:3    isEmail
+  lxp-web       · src/utils/check.ts:2         validateEmail
+  → identical body · literals: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  → no isEmail/validateEmail export found in lxp-common-functions-js — candidate shared home
+```
+
+Cluster notes cross-check candidate names against the exports of npm-only
+`lxp-common-*` packages (name-level, harvested from their `.d.ts` files) —
+either the util already exists in the shared home, or the cluster is a
+candidate to move there. A footer lists the `lxp-common-*` dependencies that
+have no cloned source repo under `--root`: their bodies are invisible to the
+scan.
+
+Flags: `--symbol <name>` (only clusters containing that name),
+`--min-tokens <n>` (floor, default 10 — trivial passthroughs like `x => !!x`
+never cluster; lower it to catch one-liners), `--same-file` (also report
+clusters inside one file), `--kind fn|const|all`.
+
+**Scope (v1):** exact structural clones only — bodies must be identical
+after normalization. A reimplementation with extra guards or a different
+algorithm is *not* found (that's a different, fuzzier problem). Class
+methods, object-literal methods, nested closures and wrapped declarations
+(`memo(() => ...)`) are not candidates. `export default validateEmail`
+(export-by-reference) marks the candidate `(not exported)`.
+
 ## Claude Code plugin (team install)
 
 No Rust toolchain needed — two commands:
@@ -147,8 +189,8 @@ claude plugin marketplace add hieudang-lxp/lxp-scan
 claude plugin install lxp-scan@lxp-tools
 ```
 
-This gives Claude Code the four commands as MCP tools (`impact`, `context`,
-`drift`, `dupes`) plus a skill teaching the agent when to use them. On first
+This gives Claude Code the five commands as MCP tools (`impact`, `context`,
+`drift`, `dupes`, `clones`) plus a skill teaching the agent when to use them. On first
 use the plugin downloads the darwin-arm64 binary from GitHub Releases
 (cached in `~/.cache/lxp-scan`) and links it to `~/.local/bin/lxp-scan`, so
 the full CLI — including `lxp-scan tui` — works from any terminal too.
@@ -173,6 +215,10 @@ claude mcp add --scope user lxp-scan -- ~/.local/bin/lxp-scan mcp --root ~/Leapx
 | `--root <dir>` | `.` | Directory of repos (repo = subdirectory with a package.json) |
 | `--from <substring>` | — | (impact/context) Filter by resolved import source |
 | `--sites <n>` | `8` | (context) Maximum usage excerpts |
+| `--symbol <name>` | — | (clones) Only clusters containing this declaration name |
+| `--min-tokens <n>` | `10` | (clones) Minimum normalized body tokens |
+| `--kind fn\|const\|all` | `all` | (clones) Declaration form to scan |
+| `--same-file` | off | (clones) Also report clusters within one file |
 | `--json` | text | JSON on stdout |
 | `--verbose` | off | Warnings on stderr |
 

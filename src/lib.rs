@@ -1,10 +1,12 @@
 pub mod analyzer;
+pub mod clones;
 pub mod context;
 pub mod definition;
 pub mod discover;
 pub mod drift;
-pub mod highlight;
 pub mod dupes;
+pub mod fingerprint;
+pub mod highlight;
 pub mod impact;
 pub mod mcp;
 pub mod report;
