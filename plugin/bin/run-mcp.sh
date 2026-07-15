@@ -4,7 +4,7 @@
 # execs the stdio server. Claude Code runs this via the plugin's MCP config.
 set -euo pipefail
 
-VERSION="v0.2.0"
+VERSION="v0.3.0"
 REPO="hieudang-lxp/lxp-scan"
 CACHE_DIR="${HOME}/.cache/lxp-scan"
 BIN="${CACHE_DIR}/lxp-scan-${VERSION}"

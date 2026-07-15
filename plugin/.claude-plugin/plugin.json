@@ -1,7 +1,7 @@
 {
   "name": "lxp-scan",
   "description": "Cross-repo FE intelligence for the LeapXpert frontend repos: impact/context/dupes/drift as MCP tools, plus a skill teaching when to use them.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "Hieu Dang"
   },
