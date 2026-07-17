@@ -10,7 +10,7 @@ use oxc_parser::Parser;
 use oxc_span::{GetSpan, SourceType, Span};
 use std::path::Path;
 
-use crate::analyzer::line_of;
+use crate::scan::analyzer::line_of;
 
 /// Floor below which a candidate body is too trivial to cluster (passthroughs
 /// like `x => !!x`). Tuned against the fixture pair in the tests below: the

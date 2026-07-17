@@ -8,8 +8,8 @@ fn workspace() -> PathBuf {
 fn markdown_pack_has_definition_props_and_excerpts() {
     let mut warnings = Vec::new();
     let pack =
-        lxp_scan::context::build_context(&workspace(), "Button", None, 8, &mut warnings).unwrap();
-    let md = lxp_scan::report::context_markdown(&pack, "fixtures");
+        lxp_scan::features::context::build_context(&workspace(), "Button", None, 8, &mut warnings).unwrap();
+    let md = lxp_scan::output::report::context_markdown(&pack, "fixtures");
 
     assert!(md.starts_with("# Context: Button\n"));
     assert!(md.contains("Scanned fixtures ·"));
@@ -28,8 +28,8 @@ fn markdown_pack_has_definition_props_and_excerpts() {
 fn json_pack_roundtrips() {
     let mut warnings = Vec::new();
     let pack =
-        lxp_scan::context::build_context(&workspace(), "Button", None, 8, &mut warnings).unwrap();
-    let json = lxp_scan::report::context_json(&pack).unwrap();
+        lxp_scan::features::context::build_context(&workspace(), "Button", None, 8, &mut warnings).unwrap();
+    let json = lxp_scan::output::report::context_json(&pack).unwrap();
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(v["symbol"], "Button");
     assert_eq!(v["definition"]["repo"], "fake-lib");

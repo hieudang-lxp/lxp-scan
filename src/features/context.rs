@@ -2,9 +2,9 @@ use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::Path;
 
-use crate::definition::{Definition, find_definition};
-use crate::discover::{Repo, discover_repos};
-use crate::impact::{ImpactHit, run_impact};
+use crate::scan::definition::{Definition, find_definition};
+use crate::scan::discover::{Repo, discover_repos};
+use crate::features::impact::{ImpactHit, run_impact};
 
 /// Lines shown per usage excerpt: the anchor line plus enough after it to
 /// cover a typical multi-line JSX render.
@@ -62,7 +62,7 @@ pub fn build_context(
     // surface the rest as repack hints.
     let mut grouped: HashMap<String, Vec<ImpactHit>> = HashMap::new();
     for hit in all_hits {
-        let key = crate::definition::defining_repo_name(&hit, &repos).to_string();
+        let key = crate::scan::definition::defining_repo_name(&hit, &repos).to_string();
         grouped.entry(key).or_default().push(hit);
     }
     let mut groups: Vec<(String, Vec<ImpactHit>)> = grouped.into_iter().collect();

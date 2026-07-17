@@ -21,8 +21,8 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 pub fn run(root: &Path) -> anyhow::Result<()> {
     let mut warnings = Vec::new();
     eprintln!("scanning {} …", root.display());
-    let repos = crate::discover::discover_repos(root, &mut warnings)?;
-    let exports = crate::dupes::scan_exports(root, &mut warnings)?;
+    let repos = crate::scan::discover::discover_repos(root, &mut warnings)?;
+    let exports = crate::features::dupes::scan_exports(root, &mut warnings)?;
     if exports.is_empty() {
         anyhow::bail!(
             "no exported components found under {} — is --root pointing at the FE workspace?",
@@ -106,13 +106,13 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<A
 }
 
 fn spawn_scan(
-    tx: mpsc::Sender<(String, Result<crate::context::ContextPack, String>)>,
+    tx: mpsc::Sender<(String, Result<crate::features::context::ContextPack, String>)>,
     root: PathBuf,
     symbol: String,
 ) {
     std::thread::spawn(move || {
         let mut warnings = Vec::new();
-        let result = crate::context::build_context(&root, &symbol, None, 5, &mut warnings)
+        let result = crate::features::context::build_context(&root, &symbol, None, 5, &mut warnings)
             .map_err(|err| format!("{err:#}"));
         // receiver gone = TUI already closed; nothing to do
         let _ = tx.send((symbol, result));

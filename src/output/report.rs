@@ -1,8 +1,8 @@
-use crate::clones::ClonesOutput;
-use crate::context::ContextPack;
-use crate::drift::{DriftLevel, DriftRow};
-use crate::dupes::DupeGroup;
-use crate::impact::ImpactHit;
+use crate::features::clones::ClonesOutput;
+use crate::features::context::ContextPack;
+use crate::features::drift::{DriftLevel, DriftRow};
+use crate::features::dupes::DupeGroup;
+use crate::features::impact::ImpactHit;
 use anyhow::Result;
 use comfy_table::{Cell, Color, ContentArrangement, Table, presets::UTF8_BORDERS_ONLY};
 use std::io::IsTerminal;
@@ -115,7 +115,7 @@ pub fn clones_report(out: &ClonesOutput) -> String {
             cluster.sig,
             cluster.token_count
         ));
-        let loc = |m: &crate::clones::CloneSite| format!("{} · {}:{}", m.repo, m.file, m.line);
+        let loc = |m: &crate::features::clones::CloneSite| format!("{} · {}:{}", m.repo, m.file, m.line);
         let width = cluster
             .members
             .iter()
@@ -157,7 +157,7 @@ pub fn context_json(pack: &ContextPack) -> Result<String> {
 /// pack can be pasted into a task brief unchanged.
 fn maybe_highlight(code: &str) -> String {
     if std::io::stdout().is_terminal() {
-        crate::highlight::highlight_ansi(code)
+        crate::output::highlight::highlight_ansi(code)
     } else {
         code.to_string()
     }
@@ -252,9 +252,9 @@ pub fn drift_table(rows: &[DriftRow], repo_names: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::discover::Repo;
-    use crate::drift::compute_drift;
-    use crate::impact::ImpactHit;
+    use crate::scan::discover::Repo;
+    use crate::features::drift::compute_drift;
+    use crate::features::impact::ImpactHit;
     use std::path::PathBuf;
 
     fn sample_rows() -> Vec<DriftRow> {
@@ -365,8 +365,8 @@ mod tests {
     }
 
     fn sample_clones() -> ClonesOutput {
-        use crate::clones::{CloneCluster, CloneSite};
-        use crate::fingerprint::CandidateKind;
+        use crate::features::clones::{CloneCluster, CloneSite};
+        use crate::scan::fingerprint::CandidateKind;
         ClonesOutput {
             clusters: vec![CloneCluster {
                 members: vec![

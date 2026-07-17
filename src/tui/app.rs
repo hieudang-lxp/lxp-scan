@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
-use crate::context::ContextPack;
-use crate::dupes::DeclSite;
+use crate::features::context::ContextPack;
+use crate::features::dupes::DeclSite;
 use crate::tui::fuzzy;
 
 pub struct SymbolEntry {
@@ -181,7 +181,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::UsageExcerpt;
+    use crate::features::context::UsageExcerpt;
 
     fn site(repo: &str, file: &str, line: usize) -> DeclSite {
         DeclSite {

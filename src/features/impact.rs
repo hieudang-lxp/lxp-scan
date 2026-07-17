@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::{analyzer, discover, resolver::RepoResolver, walker};
+use crate::scan::{analyzer, discover, resolver::RepoResolver, walker};
 
 #[derive(Serialize, Debug)]
 pub struct ImpactHit {

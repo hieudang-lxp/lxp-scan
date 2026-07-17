@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
-use crate::highlight;
+use crate::output::highlight;
 use crate::tui::app::{App, PackState};
 
 pub fn render(frame: &mut Frame, app: &App) {
@@ -71,7 +71,7 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(detail, area);
 }
 
-fn pack_lines(app: &App, pack: &crate::context::ContextPack) -> Vec<Line<'static>> {
+fn pack_lines(app: &App, pack: &crate::features::context::ContextPack) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(format!(
         "{} sites · {} files · {} repos",
         pack.total_sites, pack.total_files, pack.total_repos

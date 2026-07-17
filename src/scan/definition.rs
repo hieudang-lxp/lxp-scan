@@ -3,7 +3,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::{analyzer, discover::Repo, impact::ImpactHit, walker};
+use crate::features::impact::ImpactHit;
+use crate::scan::{analyzer, discover::Repo, walker};
 
 /// (file, (decl_start_line, decl_end_line), file text)
 type DeclCandidate = (PathBuf, (usize, usize), String);
@@ -142,7 +143,8 @@ fn slice_lines(text: &str, start: usize, end: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{discover, impact};
+    use crate::features::impact;
+    use crate::scan::discover;
     use std::path::PathBuf;
 
     fn workspace() -> PathBuf {

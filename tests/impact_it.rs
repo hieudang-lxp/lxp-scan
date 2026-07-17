@@ -7,7 +7,7 @@ fn workspace() -> PathBuf {
 #[test]
 fn finds_button_across_both_apps() {
     let mut warnings = Vec::new();
-    let hits = lxp_scan::impact::run_impact(&workspace(), "Button", None, &mut warnings).unwrap();
+    let hits = lxp_scan::features::impact::run_impact(&workspace(), "Button", None, &mut warnings).unwrap();
     let repos: Vec<_> = hits.iter().map(|h| h.repo.as_str()).collect();
     assert!(repos.contains(&"app-one"));
     assert!(repos.contains(&"app-two"));
@@ -20,7 +20,7 @@ fn finds_button_across_both_apps() {
 #[test]
 fn warns_on_unparseable_file_but_keeps_other_hits() {
     let mut warnings = Vec::new();
-    let hits = lxp_scan::impact::run_impact(&workspace(), "Button", None, &mut warnings).unwrap();
+    let hits = lxp_scan::features::impact::run_impact(&workspace(), "Button", None, &mut warnings).unwrap();
     // broken.ts is unparseable: it must warn, not kill the scan
     assert!(
         warnings.iter().any(|w| w.contains("broken.ts")),
@@ -37,16 +37,16 @@ fn warns_on_unparseable_file_but_keeps_other_hits() {
 #[test]
 fn from_filter_narrows_by_source() {
     let mut warnings = Vec::new();
-    let all = lxp_scan::impact::run_impact(&workspace(), "Button", None, &mut warnings).unwrap();
+    let all = lxp_scan::features::impact::run_impact(&workspace(), "Button", None, &mut warnings).unwrap();
     assert!(!all.is_empty());
     let filtered =
-        lxp_scan::impact::run_impact(&workspace(), "Button", Some("fake-lib"), &mut warnings)
+        lxp_scan::features::impact::run_impact(&workspace(), "Button", Some("fake-lib"), &mut warnings)
             .unwrap();
     // everything except app-two's local Button (src/special.tsx) is from fake-lib
     assert_eq!(all.len(), filtered.len() + 1);
     assert!(filtered.iter().all(|h| h.source.contains("fake-lib")));
     let none =
-        lxp_scan::impact::run_impact(&workspace(), "Button", Some("no-such-lib"), &mut warnings)
+        lxp_scan::features::impact::run_impact(&workspace(), "Button", Some("no-such-lib"), &mut warnings)
             .unwrap();
     assert!(none.is_empty());
 }
@@ -54,7 +54,7 @@ fn from_filter_narrows_by_source() {
 #[test]
 fn alias_and_relative_hits_match_same_from_filter() {
     let mut warnings = Vec::new();
-    let hits = lxp_scan::impact::run_impact(
+    let hits = lxp_scan::features::impact::run_impact(
         &workspace(),
         "formatThing",
         Some("utils/helpers"),

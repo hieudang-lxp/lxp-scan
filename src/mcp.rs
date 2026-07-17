@@ -2,7 +2,8 @@ use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 use std::path::Path;
 
-use crate::{clones, context, drift, dupes, impact, report};
+use crate::features::{clones, context, drift, dupes, impact};
+use crate::output::report;
 
 /// Minimal MCP stdio server: newline-delimited JSON-RPC 2.0 on stdin/stdout.
 /// Exposes the scan commands as tools so coding agents (Claude Code) can pull
@@ -133,7 +134,7 @@ fn call_tool(root: &Path, params: &Value) -> Value {
             context::build_context(root, symbol, from, sites, &mut warnings)
                 .map(|pack| report::context_markdown(&pack, &root.display().to_string()))
         }
-        ("drift", _) => crate::discover::discover_repos(root, &mut warnings).map(|repos| {
+        ("drift", _) => crate::scan::discover::discover_repos(root, &mut warnings).map(|repos| {
             let rows = drift::compute_drift(&repos);
             let names: Vec<String> = repos.iter().map(|r| r.name.clone()).collect();
             report::drift_table(&rows, &names)

@@ -29,21 +29,26 @@ main.rs (clap dispatch, exit codes, stdout=data / stderr=warnings+summary)
                           sort (repo, file, line) ──► report
 ```
 
-| Module | Responsibility |
-|---|---|
-| `discover` | Find repos = first-level non-hidden dirs with a `package.json`; parse deps (`dependencies` + `devDependencies` merged) |
-| `drift` | Group tracked packages (`lxp-common-`, `lxp-design-system`) across repos; flag `Major`/`Minor`/`Same` by highest diverging semver component (patch ignored; unparseable versions skipped) |
-| `walker` | Enumerate `.ts/.tsx/.js/.jsx` via the `ignore` crate — skips `node_modules`/`build`/`dist`/`coverage`, hidden dirs, `.gitignore` matches, and `.d.ts` |
-| `resolver` | Per-repo tsconfig (JSONC-tolerant): `baseUrl` + `paths` aliases. Canonicalizes alias and relative specifiers to the same absolute file path (lexical normalize + extension probing), so both forms compare and filter identically. Exact (star-less) patterns match on full equality only; longest prefix wins |
-| `analyzer` | One-file oxc AST pass: find imports of the symbol (named imports match the *source* name incl. `as` renames; default imports match the local name), then count identifier refs, JSX uses, and collect JSX prop names for the local binding |
-| `impact` | Orchestration: parallel scan, `--from` filter on the *resolved* source, warning aggregation, deterministic sort |
-| `definition` | Finds the real declaration behind the hits' imports: dominant defining repo from resolved sources (package/prefixed source → that repo; repo-relative source → the hit's own repo), then a parallel `find_declaration` scan — re-exports never match, so barrels are skipped. Excerpts `XxxProps`/`IXxxProps` + the declaration, 30 lines each |
-| `context` | Builds the LLM pack: impact scan + per-prop site counts + definition + representative usage excerpts (round-robin across repos, JSX-first, unseen prop-sets preferred), anchored at the first JSX render line |
-| `highlight` | syntect + two-face (bat's TSX grammar) → ANSI escapes for TTY `context` output, styled runs for the TUI. `OnceLock`-cached syntax set/theme |
-| `tui` | Interactive explorer (`ratatui`): `app.rs` is a pure, unit-tested state machine (fuzzy filter via `fuzzy.rs`, selection, per-symbol pack cache, excerpt cycling); `mod.rs` owns the event loop, debounced background `build_context` scans over `mpsc`, and editor spawning; `ui.rs` renders. Symbol list comes from `dupes::scan_exports` |
-| `dupes` | Scans every repo's exported values (`exported_values`: const/function/class behind `export`, incl. named default exports; type-only decls and re-exports excluded) and reports capitalized names (non-`*Props`, non-test/story files) declared in ≥2 repos — consolidation candidates |
-| `mcp` | Minimal MCP stdio server (newline-delimited JSON-RPC 2.0, no SDK dep): initialize / ping / tools/list / tools/call, exposing impact/context/drift/dupes to coding agents. `handle_message` is a pure fn for testability |
-| `report` | impact: grouped-by-repo text; context: markdown pack; dupes: grouped list; drift: table (TTY: minimal borders, colored levels); JSON for all |
+Source is grouped into layers: `scan/` (discovery, resolution, AST analysis),
+`features/` (one orchestrator per subcommand), `output/` (rendering +
+highlighting), and the interface layer — `mcp.rs`, `tui/`, and the binary's
+`cli.rs` + `commands.rs` + `main.rs` (clap dispatch).
+
+| Module | Layer | Responsibility |
+|---|---|---|
+| `scan::discover` | scan | Find repos = first-level non-hidden dirs with a `package.json`; parse deps (`dependencies` + `devDependencies` merged) |
+| `features::drift` | features | Group tracked packages (`lxp-common-`, `lxp-design-system`) across repos; flag `Major`/`Minor`/`Same` by highest diverging semver component (patch ignored; unparseable versions skipped) |
+| `scan::walker` | scan | Enumerate `.ts/.tsx/.js/.jsx` via the `ignore` crate — skips `node_modules`/`build`/`dist`/`coverage`, hidden dirs, `.gitignore` matches, and `.d.ts` |
+| `scan::resolver` | scan | Per-repo tsconfig (JSONC-tolerant): `baseUrl` + `paths` aliases. Canonicalizes alias and relative specifiers to the same absolute file path (lexical normalize + extension probing), so both forms compare and filter identically. Exact (star-less) patterns match on full equality only; longest prefix wins |
+| `scan::analyzer` | scan | One-file oxc AST pass: find imports of the symbol (named imports match the *source* name incl. `as` renames; default imports match the local name), then count identifier refs, JSX uses, and collect JSX prop names for the local binding |
+| `features::impact` | features | Orchestration: parallel scan, `--from` filter on the *resolved* source, warning aggregation, deterministic sort |
+| `scan::definition` | scan | Finds the real declaration behind the hits' imports: dominant defining repo from resolved sources (package/prefixed source → that repo; repo-relative source → the hit's own repo), then a parallel `find_declaration` scan — re-exports never match, so barrels are skipped. Excerpts `XxxProps`/`IXxxProps` + the declaration, 30 lines each |
+| `features::context` | features | Builds the LLM pack: impact scan + per-prop site counts + definition + representative usage excerpts (round-robin across repos, JSX-first, unseen prop-sets preferred), anchored at the first JSX render line |
+| `output::highlight` | output | syntect + two-face (bat's TSX grammar) → ANSI escapes for TTY `context` output, styled runs for the TUI. `OnceLock`-cached syntax set/theme |
+| `tui` | interface | Interactive explorer (`ratatui`): `app.rs` is a pure, unit-tested state machine (fuzzy filter via `fuzzy.rs`, selection, per-symbol pack cache, excerpt cycling); `mod.rs` owns the event loop, debounced background `build_context` scans over `mpsc`, and editor spawning; `ui.rs` renders. Symbol list comes from `dupes::scan_exports` |
+| `features::dupes` | features | Scans every repo's exported values (`exported_values`: const/function/class behind `export`, incl. named default exports; type-only decls and re-exports excluded) and reports capitalized names (non-`*Props`, non-test/story files) declared in ≥2 repos — consolidation candidates |
+| `mcp` | interface | Minimal MCP stdio server (newline-delimited JSON-RPC 2.0, no SDK dep): initialize / ping / tools/list / tools/call, exposing impact/context/drift/dupes to coding agents. `handle_message` is a pure fn for testability |
+| `output::report` | output | impact: grouped-by-repo text; context: markdown pack; dupes: grouped list; drift: table (TTY: minimal borders, colored levels); JSON for all |
 
 ## Key decisions
 

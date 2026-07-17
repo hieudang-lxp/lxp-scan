@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::{analyzer, discover, walker};
+use crate::scan::{analyzer, discover, walker};
 
 /// exported values of one file: (name, decl line, repo-relative file)
 type FileExports = Vec<(String, usize, String)>;

@@ -3,9 +3,9 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use crate::discover::Repo;
-use crate::fingerprint::{self, Candidate, CandidateKind};
-use crate::{analyzer, discover, walker};
+use crate::scan::discover::Repo;
+use crate::scan::fingerprint::{self, Candidate, CandidateKind};
+use crate::scan::{analyzer, discover, walker};
 
 /// Candidate-level kind filter (`--kind`). A cluster may mix declaration
 /// forms (`const` arrow in one repo, `function` in another), so filtering

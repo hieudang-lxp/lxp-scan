@@ -1,4 +1,4 @@
-use crate::discover::Repo;
+use crate::scan::discover::Repo;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
